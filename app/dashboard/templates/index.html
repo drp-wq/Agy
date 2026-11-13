@@ -523,6 +523,8 @@
       hoverIdx: -1,
       drawScheduled: false,
       layout: null,
+      paperPositions: [],
+      initialPositionSelected: false,
     };
 
     function escapeHtml(val) {
@@ -786,6 +788,15 @@
 
       // Open Paper Positions + SL/TP table
       const openPos = port.open_positions || [];
+      chartState.paperPositions = openPos;
+      // Initially follow the first actual paper position instead of an unrelated SPOT chart.
+      // Never override a market the operator has manually selected.
+      if (!chartState.initialPositionSelected && openPos.length) {
+        chartState.initialPositionSelected = true;
+        const p = openPos[0];
+        selectChartMarket(p.exchange, p.market_type, p.symbol);
+      }
+      scheduleChartDraw();
       setHtmlDiff(
         'tbl-positions',
         openPos.length
@@ -1513,6 +1524,46 @@
       ctx.textAlign = 'left';
       ctx.textBaseline = 'middle';
       ctx.fillText(fmtPrice(last.close), padL + plotW + 5, yLast);
+
+      // PAPER position overlays, sourced from the same portfolio state as the positions table.
+      // Never confuse these simulated levels with real exchange positions.
+      const normalizePair = value => String(value || '').toUpperCase().replace(/[^A-Z0-9]/g, '').replace(/USDT(?:SWAP|PERP)$/, 'USDT');
+      const selectedPositions = chartState.marketType === 'perp'
+        ? chartState.paperPositions.filter(p =>
+            p.exchange === chartState.exchange &&
+            ['futures', 'perp', 'swap'].includes(String(p.market_type).toLowerCase()) &&
+            normalizePair(p.symbol) === normalizePair(chartState.symbol))
+        : [];
+      const overlayLevels = [];
+      for (const p of selectedPositions) {
+        const side = String(p.direction || '').toUpperCase();
+        for (const [field, label, color] of [
+          ['entry_price', `ENTRY ${side}`, '#00f0ff'],
+          ['stop_loss', 'SL', '#ff4466'],
+          ['take_profit', 'TP', '#00ff9d']
+        ]) {
+          const price = Number(p[field]);
+          if (Number.isFinite(price) && price > 0) overlayLevels.push({price, label, color});
+        }
+      }
+      for (const level of overlayLevels) {
+        const y = yForPrice(level.price);
+        if (y < padT || y > padT + priceH) continue;
+        ctx.save();
+        ctx.strokeStyle = level.color;
+        ctx.lineWidth = level.label.startsWith('ENTRY') ? 2 : 1.5;
+        ctx.setLineDash(level.label.startsWith('ENTRY') ? [] : [5, 4]);
+        ctx.beginPath();
+        ctx.moveTo(padL, y);
+        ctx.lineTo(padL + plotW, y);
+        ctx.stroke();
+        ctx.restore();
+        ctx.font = 'bold 10px monospace';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = level.color;
+        ctx.fillText(`${level.label} ${fmtPrice(level.price)}`, padL + 4, Math.max(padT + 7, Math.min(padT + priceH - 7, y - 8)));
+      }
 
       // Interactive hover crosshair
       if (chartState.hoverIdx >= 0 && chartState.hoverIdx < candles.length) {
