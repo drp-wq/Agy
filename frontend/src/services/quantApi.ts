@@ -93,6 +93,17 @@ function normalizeCandles(raw: unknown): CandleBar[] {
   return Array.from(byTime.values()).sort((a, b) => a.time - b.time);
 }
 
+export interface Freshness { status: 'fresh' | 'stale' | 'missing' | 'invalid'; timestamp: string | null; age_seconds: number | null }
+export interface PaperDiagnostics {
+  mode: 'PAPER_ONLY'; read_only: true; generated_at: string; pnl_semantics: string;
+  exchanges: Record<string, { orders_by_status: Record<string, number>; rejections_by_reason: Record<string, number>;
+    fills: number; fees_usd: number; realized_pnl_usd: number; unrealized_pnl_usd: number;
+    account_freshness: Freshness; order_freshness: Freshness; fill_freshness: Freshness }>;
+  system: { cycle: Freshness; observation: Freshness };
+  screening: { cached_market_snapshots: number; active_signals: number; note: string };
+  risk: { emergency_stop_active: boolean; live_execution_disabled: boolean };
+}
+
 class NeonQuantApiClient {
   private baseUrl: string;
 
@@ -130,6 +141,19 @@ class NeonQuantApiClient {
       throw new LiveExecutionBlockedError('submitLiveOrder');
     }
     throw new LiveExecutionBlockedError('submitLiveOrder');
+  }
+
+  public async getDiagnostics(initData?: string, signal?: AbortSignal): Promise<PaperDiagnostics> {
+    const res = await fetch(`${this.baseUrl}/api/miniapp/diagnostics`, {
+      headers: this.getHeaders(initData), credentials: 'include', cache: 'no-store', signal
+    });
+    if (res.status === 401 || res.status === 403) throw new TelegramAuthError('Diagnostics authentication required', res.status);
+    if (!res.ok) throw new ApiFetchError('Unable to load diagnostics', res.status);
+    const data = await res.json();
+    if (data?.mode !== 'PAPER_ONLY' || data?.read_only !== true || !data?.exchanges || !data?.system || !data?.screening || !data?.risk) {
+      throw new ApiFetchError('Invalid paper diagnostics payload');
+    }
+    return data as PaperDiagnostics;
   }
 
   public async getHealth(

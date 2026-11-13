@@ -1,42 +1,74 @@
 #!/usr/bin/env python3
-"""72-hour observational paper validation; no trade or exchange writes."""
-import datetime as dt,json,os,sqlite3,subprocess,time,urllib.request
+"""Worktree-relative observational paper validation; no services or ledger writes."""
+import argparse
+import datetime as dt
+import json
+import os
 from pathlib import Path
-root=Path('/root/multi-exchange-paper/validation72'); meta=root/'window.json'
-window=json.loads(meta.read_text()); now=dt.datetime.now(dt.timezone.utc); end=dt.datetime.fromisoformat(window['end_utc'])
-if now>end:
- (root/'complete.flag').touch(exist_ok=True)
- raise SystemExit(0)
-record={'timestamp':now.isoformat(),'seconds_remaining':max(0,int((end-now).total_seconds()))}
-def cmd(*args):
- try:
-  p=subprocess.run(args,capture_output=True,text=True,timeout=7)
-  return p.returncode==0 and p.stdout.strip()=='active'
- except Exception:return False
-record['engine_active']=cmd('systemctl','is-active','multi-exchange-paper.service')
-record['telegram_timer_active']=cmd('systemctl','is-active','multi-exchange-telegram.timer')
-record['octobot_observer_active']=cmd('systemctl','is-active','octobot-paper-observer.timer')
-try:
- p=subprocess.run(['docker','inspect','--format','{{.State.Health.Status}}','octobot-paper'],capture_output=True,text=True,timeout=7)
- record['octobot_health']=p.stdout.strip() if p.returncode==0 else 'unavailable'
-except Exception:record['octobot_health']='unavailable'
-for name,url in [('public_health','https://trade.187-52-118-25.sslip.io/api/health'),('private_auth_guard','https://trade.187-52-118-25.sslip.io/api/miniapp/health')]:
- try:
-  with urllib.request.urlopen(url,timeout=7) as r:record[name]=r.status
- except urllib.error.HTTPError as e:record[name]=e.code
- except Exception:record[name]=None
-try:
- c=sqlite3.connect('file:/root/multi-exchange-paper/data/paper_engine.sqlite3?mode=ro',uri=True,timeout=5)
- for table in ['paper_accounts','paper_orders','paper_fills','paper_positions']:
-  record[table+'_count']=c.execute('select count(*) from '+table).fetchone()[0]
- record['exchange_orders']={k:v for k,v in c.execute('select exchange,count(*) from paper_orders group by exchange')}
- record['order_status']={k:v for k,v in c.execute('select status,count(*) from paper_orders group by status')}
- record['paper_fees_usd']=round(c.execute('select coalesce(sum(fee_usd),0) from paper_fills').fetchone()[0],6)
- record['paper_realized_pnl_usd']=round(c.execute('select coalesce(sum(realized_pnl_usd),0) from paper_accounts').fetchone()[0],4)
- record['paper_cash_usd']=round(c.execute('select coalesce(sum(cash_usd),0) from paper_accounts').fetchone()[0],4)
- record['all_orders_paper']=c.execute('select count(*) from paper_orders where is_paper != 1').fetchone()[0]==0
- record['all_fills_paper']=c.execute('select count(*) from paper_fills where is_paper != 1').fetchone()[0]==0
- c.close()
-except Exception as exc:record['ledger_error_type']=type(exc).__name__
-with (root/'observations.jsonl').open('a') as f:f.write(json.dumps(record,separators=(',',':'))+'\n')
-tmp=root/'latest.tmp';tmp.write_text(json.dumps(record,indent=2));os.chmod(tmp,0o600);tmp.replace(root/'latest.json')
+import sqlite3
+import sys
+import urllib.error
+import urllib.request
+
+REPO = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO))
+from app.dashboard.diagnostics import ledger_diagnostics, observation_status
+
+
+def collect(db_path, root, base_url=None, now=None):
+    now = now or dt.datetime.now(dt.timezone.utc)
+    record = {'timestamp': now.isoformat(), 'mode': 'PAPER_ONLY',
+              'previous_observation': observation_status(root / 'latest.json', now)}
+    window_path = root / 'window.json'
+    if window_path.exists():
+        try:
+            end = dt.datetime.fromisoformat(json.loads(window_path.read_text())['end_utc'].replace('Z', '+00:00'))
+            if end.tzinfo is None:
+                raise ValueError('timezone required')
+            record['seconds_remaining'] = max(0, int((end - now).total_seconds()))
+            record['window_complete'] = now >= end
+        except (ValueError, KeyError, TypeError):
+            record['window_error'] = 'invalid'
+    # mode=ro prevents SQLite from creating or modifying the source ledger.
+    try:
+        with sqlite3.connect(db_path.resolve().as_uri() + '?mode=ro', uri=True, timeout=5) as conn:
+            conn.execute('PRAGMA query_only=ON')
+            record['exchanges'] = ledger_diagnostics(conn, now)
+            record['all_orders_paper'] = conn.execute('SELECT COUNT(*) FROM paper_orders WHERE is_paper IS NOT 1').fetchone()[0] == 0
+            record['all_fills_paper'] = conn.execute('SELECT COUNT(*) FROM paper_fills WHERE is_paper IS NOT 1').fetchone()[0] == 0
+    except sqlite3.Error as exc:
+        record['ledger_error_type'] = type(exc).__name__
+    if base_url:
+        for name, endpoint in [('public_health', '/api/health'), ('private_auth_guard', '/api/miniapp/diagnostics')]:
+            try:
+                with urllib.request.urlopen(base_url.rstrip('/') + endpoint, timeout=7) as response:
+                    record[name] = response.status
+            except urllib.error.HTTPError as exc:
+                record[name] = exc.code
+            except (OSError, ValueError):
+                record[name] = None
+    return record
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--root', type=Path, default=REPO / 'validation72')
+    parser.add_argument('--db', type=Path, default=REPO / 'data' / 'paper_engine.sqlite3')
+    parser.add_argument('--base-url', default=os.environ.get('PAPER_MONITOR_BASE_URL'))
+    args = parser.parse_args()
+    record = collect(args.db, args.root, args.base_url)
+    args.root.mkdir(parents=True, exist_ok=True)
+    with (args.root / 'observations.jsonl').open('a') as stream:
+        os.chmod(stream.name, 0o600)
+        stream.write(json.dumps(record, separators=(',', ':')) + '\n')
+    tmp = args.root / 'latest.tmp'
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, 'w') as stream:
+        stream.write(json.dumps(record, indent=2))
+    tmp.replace(args.root / 'latest.json')
+    if record.get('window_complete'):
+        (args.root / 'complete.flag').touch(exist_ok=True)
+
+
+if __name__ == '__main__':
+    main()

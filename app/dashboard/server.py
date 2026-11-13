@@ -235,6 +235,16 @@ def create_dashboard_app(
             raise
         return templates.TemplateResponse(request, "aurora.html", {"user": user, "google_enabled": google_enabled})
 
+    @app.get("/api/diagnostics")
+    async def diagnostics(_user: str = Depends(require_auth)) -> dict[str, Any]:
+        from app.dashboard.diagnostics import build_diagnostics
+        return build_diagnostics(service)
+
+    @app.get("/api/miniapp/diagnostics")
+    async def miniapp_diagnostics(_user: str = Depends(require_miniapp_auth)) -> dict[str, Any]:
+        from app.dashboard.diagnostics import build_diagnostics
+        return build_diagnostics(service)
+
     @app.get("/api/state")
     async def get_state(_user: str = Depends(require_auth)) -> dict[str, Any]:
         return service.state_snapshot()

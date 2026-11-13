@@ -1,3 +1,4 @@
+import { DiagnosticsPanel } from './components/workspaces/DiagnosticsPanel';
 import React, { useState, useEffect, useCallback, useRef, Suspense, lazy } from 'react';
 import {
   LayoutDashboard,
@@ -369,6 +370,9 @@ export default function App() {
 
           {/* Active Workspace Render */}
           {state && !authError && (
+            <>
+            {['system', 'orders', 'analytics', 'scanner', 'opportunities', 'risk'].includes(activeSection) &&
+              <DiagnosticsPanel section={activeSection} initData={telegram.initData} />}
             <Suspense fallback={<LoadingTerminalSkeleton />}>
               {activeSection === 'overview' && (
                 <GlobalOverviewView
@@ -431,6 +435,7 @@ export default function App() {
 
               <ReadOnlySecurityFooterNotice />
             </Suspense>
+            </>
           )}
         </main>
       </div>
