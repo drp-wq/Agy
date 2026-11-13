@@ -99,11 +99,15 @@ class MultiBotManager:
         }
         for b in self.bots.values():
             self.engine.ensure_bot_account(b.bot_id, b.exchange, b.allocated_capital_usd)
+            persisted_enabled = self.engine.db.load_bot_enabled(b.bot_id)
+            if persisted_enabled is not None:
+                b.enabled = persisted_enabled
 
     def toggle_bot(self, bot_id: str, enabled: bool) -> BotConfig:
         if bot_id not in self.bots:
             raise KeyError(f"Unknown bot '{bot_id}'")
         self.bots[bot_id].enabled = enabled
+        self.engine.db.save_bot_enabled(bot_id, enabled)
         return self.bots[bot_id]
 
     async def process_signals_concurrently(
@@ -119,6 +123,9 @@ class MultiBotManager:
             healthy = adapter.health_status()["healthy"]
             acct = self.engine.db.get_account(bot.bot_id)
             cash = acct["cash_usd"] if acct else bot.allocated_capital_usd
+            reserved = acct.get("reserved_margin_usd", 0.0) if acct else 0.0
+            free_cash = max(0.0, cash - reserved)
+            open_positions = self.engine.db.list_positions()
 
             matching = [
                 s
@@ -129,9 +136,14 @@ class MultiBotManager:
                 and (not bot.strategies or s.strategy_name in bot.strategies)
             ]
             for sig in matching[:2]:
+                can_accept, _ = self.engine.risk.can_accept_new_signal(sig, open_positions)
+                if not can_accept:
+                    continue
                 key = f"{sig.exchange.value}:{sig.market_type.value}:{sig.symbol}"
                 snap = snapshots.get(key)
-                notional = max(25.0, cash * bot.risk_per_trade_pct * 5.0)
+                notional = max(25.0, free_cash * bot.risk_per_trade_pct * 5.0)
+                if free_cash < (notional / max(bot.leverage, 1.0)):
+                    continue
                 bucket_ts = int(datetime.now(timezone.utc).timestamp() // 60)
                 client_oid = f"{bot.bot_id}:{sig.exchange.value}:{sig.symbol}:{sig.strategy_name}:{bucket_ts}"
                 order = await asyncio.to_thread(

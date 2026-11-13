@@ -10,6 +10,7 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 
 from app.core.logging_setup import register_sensitive_value
+from app.core.security import validate_secrets_file_permissions
 
 security = HTTPBasic(auto_error=False)
 DEFAULT_DASHBOARD_ENV = Path("/root/trading-secrets/dashboard.env")
@@ -31,6 +32,7 @@ class DashboardAuthConfig:
             return cls(env_user, env_pass)
 
         if env_path.exists():
+            validate_secrets_file_permissions(env_path)
             data: dict[str, str] = {}
             for line in env_path.read_text(encoding="utf-8").splitlines():
                 if "=" in line and not line.strip().startswith("#"):

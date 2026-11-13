@@ -140,6 +140,7 @@ class NeonQuantApiClient {
       const res = await fetch(`${this.baseUrl}/api/miniapp/health`, {
         method: 'GET',
         headers: this.getHeaders(initData),
+        credentials: 'same-origin',
         signal
       });
 
@@ -174,6 +175,7 @@ class NeonQuantApiClient {
       const res = await fetch(`${this.baseUrl}/api/miniapp/state`, {
         method: 'GET',
         headers: this.getHeaders(initData),
+        credentials: 'same-origin',
         signal
       });
 
@@ -217,6 +219,7 @@ class NeonQuantApiClient {
       const res = await fetch(endpoint, {
         method: 'GET',
         headers: this.getHeaders(initData),
+        credentials: 'same-origin',
         signal
       });
 

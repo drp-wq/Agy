@@ -1,0 +1,10 @@
+# Mid/low-cap adaptive PAPER autotrading implementation
+User requests global mid-cap and low-cap opportunity scanning and adaptive automatic trading. Implement in the existing /root/multi-exchange-paper project, preserving existing live-disabled invariant and existing paper ledger.
+Requirements:
+1. Market-cap classification must use actual circulating market cap from a documented source, with freshness and provenance; NEVER infer market cap from 24h volume or price. If unavailable classify UNKNOWN and exclude from cap-targeted automatic trading. Suggested bands: low $50M-$300M, mid $300M-$10B; configurable.
+2. Discover exchange-listed USDT spot markets dynamically from read-only exchange market metadata; avoid a hard-coded majors-only watchlist. Rate-limit, cache and cap requests. Exclude inactive markets, leveraged tokens, stablecoin pairs, and recently listed markets without adequate history. No futures or leverage by default.
+3. Hard liquidity/spread/volume, minimum history, data freshness, suspicious volume, and concentration filters; reject rather than trade on missing safety data. Use bounded market cap API without embedding API secrets or relying on undocumented endpoints.
+4. Adaptive strategy selection from existing orchestrator: trend continuation, breakout-retest, and range mean reversion only when regime and out-of-sample evidence permit. Incorporate fees/slippage in net expectancy; no claim of guaranteed profitability. Minimum reward/risk 2, ATR stop, maximum 0.25% paper equity risk/trade, daily loss max 1%, max 3 simultaneous low/mid-cap positions, no martingale/averaging down.
+5. Keep existing live order execution DISABLED, no credential changes, no real orders. Use paper trading only. Add comprehensive tests and truthful evidence of actual paper execution versus just service running.
+6. Prefer feature flags and staged validation to protect current service; do not restart existing production services without explicit approval. Produce MID_LOW_CAP_IMPLEMENTATION_REPORT.md and document any external market-cap API blocker.
+7. No fabricated metrics, market cap or profit promises.

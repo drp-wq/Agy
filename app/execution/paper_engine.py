@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import logging
+import sqlite3
 import threading
 from datetime import datetime, timezone
 from typing import Any
+from uuid import uuid4
 
 from app.core.models import (
     Direction,
@@ -71,8 +73,40 @@ class PaperExecutionEngine:
         side: Side,
         snapshot: MarketSnapshot,
         fee_rate: float,
+        order_type: OrderType = OrderType.MARKET,
+        limit_price: float | None = None,
     ) -> list[tuple[float, float, float, float]]:
-        """Return list of (slice_qty, exec_price, fee_usd, slippage_bps) supporting partial fills."""
+        """Return list of (slice_qty, exec_price, fee_usd, slippage_bps) supporting L2 book sweeps and partial fills."""
+        if requested_qty <= 0 or price <= 0:
+            return []
+
+        # Prefer L2 order-book sweep when snapshot includes level data
+        book_levels = getattr(snapshot, "asks", None) if side == Side.BUY else getattr(snapshot, "bids", None)
+        if book_levels:
+            remaining = requested_qty
+            slices: list[tuple[float, float, float, float]] = []
+            for lvl_price, lvl_qty in book_levels:
+                if remaining <= 1e-9:
+                    break
+                if lvl_price <= 0 or lvl_qty <= 0:
+                    continue
+                if order_type == OrderType.LIMIT and limit_price is not None:
+                    if (side == Side.BUY and lvl_price > limit_price) or (side == Side.SELL and lvl_price < limit_price):
+                        break
+                take_qty = round(min(remaining, float(lvl_qty)), 6)
+                if take_qty <= 0:
+                    continue
+                slip_bps = round(abs(lvl_price - price) / price * 10000.0, 3)
+                fee_usd = round(take_qty * lvl_price * fee_rate, 6)
+                slices.append((take_qty, round(float(lvl_price), 6), fee_usd, slip_bps))
+                remaining = round(remaining - take_qty, 6)
+            return slices
+
+        # Fallback: depth-aware tranche simulation
+        if order_type == OrderType.LIMIT and limit_price is not None:
+            if (side == Side.BUY and price > limit_price) or (side == Side.SELL and price < limit_price):
+                return []
+
         notional = requested_qty * price
         depth = max(snapshot.order_book_depth_usd, 1000.0)
         half_spread_bps = max(1.0, snapshot.spread_bps / 2.0)
@@ -83,7 +117,7 @@ class PaperExecutionEngine:
         else:
             ratios = (1.0,)
 
-        slices: list[tuple[float, float, float, float]] = []
+        slices = []
         for idx, ratio in enumerate(ratios):
             slice_qty = round(requested_qty * ratio, 6)
             if slice_qty <= 0:
@@ -92,6 +126,9 @@ class PaperExecutionEngine:
             slippage_bps = round(half_spread_bps + impact_bps, 3)
             slip_mult = 1.0 + (slippage_bps / 10000.0) if side == Side.BUY else 1.0 - (slippage_bps / 10000.0)
             exec_price = round(price * slip_mult, 6)
+            if order_type == OrderType.LIMIT and limit_price is not None:
+                if (side == Side.BUY and exec_price > limit_price) or (side == Side.SELL and exec_price < limit_price):
+                    continue
             fee_usd = round(slice_qty * exec_price * fee_rate, 6)
             slices.append((slice_qty, exec_price, fee_usd, slippage_bps))
         return slices
@@ -105,8 +142,10 @@ class PaperExecutionEngine:
         snapshot: MarketSnapshot | None,
         client_order_id: str,
         exchange_healthy: bool = True,
+        order_type: OrderType = OrderType.MARKET,
+        limit_price: float | None = None,
     ) -> PaperOrder:
-        """Process a strategy signal through Risk Guardian and deterministic paper order state machine."""
+        """Process a strategy signal through Risk Guardian and atomic paper order state machine."""
         assert_paper_only("paper")
         with self._lock:
             existing = self.db.get_order_by_client_id(client_order_id)
@@ -126,6 +165,7 @@ class PaperExecutionEngine:
             )
 
             side = Side.BUY if signal.direction == Direction.LONG else Side.SELL
+            eff_leverage = leverage if signal.market_type == MarketType.PERP else 1.0
             order = PaperOrder(
                 client_order_id=client_order_id,
                 bot_id=bot_id,
@@ -134,11 +174,12 @@ class PaperExecutionEngine:
                 symbol=signal.symbol,
                 market_type=signal.market_type,
                 side=side,
-                order_type=OrderType.MARKET,
+                order_type=order_type,
                 requested_qty=decision.adjusted_qty if decision.approved else 0.0,
+                limit_price=limit_price,
                 stop_loss=signal.stop_loss,
                 take_profit=signal.take_profit_targets[0] if signal.take_profit_targets else None,
-                leverage=leverage if signal.market_type == MarketType.PERP else 1.0,
+                leverage=eff_leverage,
                 status=OrderStatus.CREATED,
                 is_paper=True,
             )
@@ -147,29 +188,62 @@ class PaperExecutionEngine:
                 order.status = OrderStatus.REJECTED
                 order.reject_reason = decision.reason
                 order.updated_at = datetime.now(timezone.utc)
-                self.db.save_order(order)
-                self.db.log_audit(
-                    "ORDER_REJECTED",
-                    bot_id,
-                    {"order_id": order.order_id, "reason": decision.reason, "symbol": signal.symbol},
-                )
+                with self.db.transaction() as conn:
+                    self.db.save_order(order, conn=conn)
+                    self.db.log_audit(
+                        "ORDER_REJECTED",
+                        bot_id,
+                        {"order_id": order.order_id, "reason": decision.reason, "symbol": signal.symbol},
+                        conn=conn,
+                    )
                 return order
-
-            # Transition: CREATED -> VALIDATED -> SUBMITTED
-            order.status = OrderStatus.VALIDATED
-            self.db.save_order(order)
-            order.status = OrderStatus.SUBMITTED
-            self.db.save_order(order)
 
             fee_sched = EXCHANGE_FEE_SCHEDULE.get(
                 (signal.exchange, signal.market_type), {"maker": 0.0008, "taker": 0.0010}
             )
+            fee_rate = fee_sched["maker"] if order_type == OrderType.LIMIT else fee_sched["taker"]
+
+            # Enforce free margin reservation check when bot account exists (skip for reducing/closing orders)
+            acct = self.db.get_account(bot_id)
+            if acct is not None:
+                existing_pos = next(
+                    (
+                        p
+                        for p in positions
+                        if p.bot_id == bot_id
+                        and p.exchange == signal.exchange
+                        and p.symbol == signal.symbol
+                        and p.market_type == signal.market_type
+                    ),
+                    None,
+                )
+                is_reducing = existing_pos is not None and existing_pos.direction != signal.direction
+                if not is_reducing:
+                    free_cash = float(acct["cash_usd"]) - float(acct.get("reserved_margin_usd", 0.0) or 0.0)
+                    req_notional = order.requested_qty * snapshot.last_price
+                    req_margin = (req_notional / max(eff_leverage, 1.0)) + (req_notional * fee_rate)
+                    if free_cash < req_margin:
+                        order.status = OrderStatus.REJECTED
+                        order.reject_reason = "insufficient_free_margin"
+                        order.updated_at = datetime.now(timezone.utc)
+                        with self.db.transaction() as conn:
+                            self.db.save_order(order, conn=conn)
+                            self.db.log_audit(
+                                "ORDER_REJECTED",
+                                bot_id,
+                                {"order_id": order.order_id, "reason": order.reject_reason, "symbol": signal.symbol},
+                                conn=conn,
+                            )
+                        return order
+
             slices = self._simulate_fill_slices(
                 requested_qty=order.requested_qty,
                 price=snapshot.last_price,
                 side=side,
                 snapshot=snapshot,
-                fee_rate=fee_sched["taker"],
+                fee_rate=fee_rate,
+                order_type=order_type,
+                limit_price=limit_price,
             )
 
             total_filled = 0.0
@@ -177,55 +251,70 @@ class PaperExecutionEngine:
             total_fee = 0.0
             weighted_slip = 0.0
 
-            for idx, (s_qty, s_price, s_fee, s_slip) in enumerate(slices):
-                fill = PaperFill(
-                    order_id=order.order_id,
-                    bot_id=bot_id,
-                    exchange=signal.exchange,
-                    symbol=signal.symbol,
-                    market_type=signal.market_type,
-                    side=side,
-                    qty=s_qty,
-                    price=s_price,
-                    fee_usd=s_fee,
-                    slippage_bps=s_slip,
-                    is_paper=True,
-                )
-                self.db.save_fill(fill)
-                total_filled += s_qty
-                total_cost += s_qty * s_price
-                total_fee += s_fee
-                weighted_slip += s_slip * s_qty
+            with self.db.transaction() as conn:
+                order.status = OrderStatus.VALIDATED
+                self.db.save_order(order, conn=conn)
+                order.status = OrderStatus.SUBMITTED
+                self.db.save_order(order, conn=conn)
 
-                order.filled_qty = round(total_filled, 6)
-                order.avg_fill_price = round(total_cost / total_filled, 6)
-                order.fee_usd = round(total_fee, 6)
-                order.slippage_bps = round(weighted_slip / total_filled, 3)
-                order.status = (
-                    OrderStatus.PARTIALLY_FILLED if idx < len(slices) - 1 else OrderStatus.FILLED
-                )
-                order.updated_at = datetime.now(timezone.utc)
-                self.db.save_order(order)
+                for s_qty, s_price, s_fee, s_slip in slices:
+                    fill = PaperFill(
+                        order_id=order.order_id,
+                        bot_id=bot_id,
+                        exchange=signal.exchange,
+                        symbol=signal.symbol,
+                        market_type=signal.market_type,
+                        side=side,
+                        qty=s_qty,
+                        price=s_price,
+                        fee_usd=s_fee,
+                        slippage_bps=s_slip,
+                        is_paper=True,
+                    )
+                    self.db.save_fill(fill, conn=conn)
+                    total_filled += s_qty
+                    total_cost += s_qty * s_price
+                    total_fee += s_fee
+                    weighted_slip += s_slip * s_qty
 
-            self._apply_fill_to_position_and_account(order, snapshot.last_price)
-            self.db.log_audit(
-                "PAPER_ORDER_FILLED",
-                bot_id,
-                {
-                    "order_id": order.order_id,
-                    "exchange": order.exchange.value,
-                    "symbol": order.symbol,
-                    "side": order.side.value,
-                    "qty": order.filled_qty,
-                    "avg_price": order.avg_fill_price,
-                    "fee_usd": order.fee_usd,
-                    "is_paper": True,
-                },
-            )
+                if total_filled > 0:
+                    order.filled_qty = round(total_filled, 6)
+                    order.avg_fill_price = round(total_cost / total_filled, 6)
+                    order.fee_usd = round(total_fee, 6)
+                    order.slippage_bps = round(weighted_slip / total_filled, 3)
+                    order.status = (
+                        OrderStatus.FILLED
+                        if order.filled_qty >= round(order.requested_qty * 0.9999, 6)
+                        else OrderStatus.PARTIALLY_FILLED
+                    )
+                    order.updated_at = datetime.now(timezone.utc)
+                    self.db.save_order(order, conn=conn)
+                    self._apply_fill_to_position_and_account(order, snapshot.last_price, conn=conn)
+                    self.db.log_audit(
+                        "PAPER_ORDER_FILLED" if order.status == OrderStatus.FILLED else "PAPER_ORDER_PARTIAL_FILL",
+                        bot_id,
+                        {
+                            "order_id": order.order_id,
+                            "exchange": order.exchange.value,
+                            "symbol": order.symbol,
+                            "side": order.side.value,
+                            "qty": order.filled_qty,
+                            "requested_qty": order.requested_qty,
+                            "avg_price": order.avg_fill_price,
+                            "fee_usd": order.fee_usd,
+                            "status": order.status.value,
+                            "is_paper": True,
+                        },
+                        conn=conn,
+                    )
             return order
 
-    def _apply_fill_to_position_and_account(self, order: PaperOrder, mark_price: float) -> None:
-        self.db.update_account_cash(order.bot_id, cash_delta=-order.fee_usd, realized_pnl_delta=-order.fee_usd)
+    def _apply_fill_to_position_and_account(
+        self,
+        order: PaperOrder,
+        mark_price: float,
+        conn: sqlite3.Connection | None = None,
+    ) -> None:
         existing_list = [
             p
             for p in self.db.list_positions(order.bot_id)
@@ -236,6 +325,14 @@ class PaperExecutionEngine:
         direction = Direction.LONG if order.side == Side.BUY else Direction.SHORT
 
         if not existing_list:
+            margin_delta = round((order.filled_qty * order.avg_fill_price) / max(order.leverage, 1.0), 6)
+            self.db.update_account_cash(
+                order.bot_id,
+                cash_delta=-order.fee_usd,
+                realized_pnl_delta=-order.fee_usd,
+                reserved_margin_delta=margin_delta,
+                conn=conn,
+            )
             pos = PaperPosition(
                 bot_id=order.bot_id,
                 exchange=order.exchange,
@@ -251,11 +348,19 @@ class PaperExecutionEngine:
                 unrealized_pnl_usd=0.0,
                 is_paper=True,
             )
-            self.db.upsert_position(pos)
+            self.db.upsert_position(pos, conn=conn)
             return
 
         pos = existing_list[0]
         if pos.direction == direction:
+            margin_delta = round((order.filled_qty * order.avg_fill_price) / max(order.leverage, 1.0), 6)
+            self.db.update_account_cash(
+                order.bot_id,
+                cash_delta=-order.fee_usd,
+                realized_pnl_delta=-order.fee_usd,
+                reserved_margin_delta=margin_delta,
+                conn=conn,
+            )
             new_qty = pos.qty + order.filled_qty
             pos.entry_price = round(
                 ((pos.entry_price * pos.qty) + (order.avg_fill_price * order.filled_qty)) / new_qty,
@@ -266,26 +371,34 @@ class PaperExecutionEngine:
             pos.stop_loss = order.stop_loss or pos.stop_loss
             pos.take_profit = order.take_profit or pos.take_profit
             pos.updated_at = datetime.now(timezone.utc)
-            self.db.upsert_position(pos)
+            self.db.upsert_position(pos, conn=conn)
         else:
             close_qty = min(pos.qty, order.filled_qty)
+            released_margin = round((close_qty * pos.entry_price) / max(pos.leverage, 1.0), 6)
+            self.db.update_account_cash(
+                order.bot_id,
+                cash_delta=-order.fee_usd,
+                realized_pnl_delta=-order.fee_usd,
+                reserved_margin_delta=-released_margin,
+                conn=conn,
+            )
             pnl_per_unit = (
                 (order.avg_fill_price - pos.entry_price)
                 if pos.direction == Direction.LONG
                 else (pos.entry_price - order.avg_fill_price)
             )
             realized = round(pnl_per_unit * close_qty, 6)
-            self.db.update_account_cash(order.bot_id, cash_delta=realized, realized_pnl_delta=realized)
+            self.db.record_paper_close(order, close_qty, pos.entry_price, realized, conn=conn)
             remaining = round(pos.qty - close_qty, 6)
             if remaining <= 1e-8:
                 pos.qty = 0.0
-                self.db.upsert_position(pos)
+                self.db.upsert_position(pos, conn=conn)
             else:
                 pos.qty = remaining
                 pos.mark_price = mark_price
                 pos.realized_pnl_usd = round(pos.realized_pnl_usd + realized, 6)
                 pos.updated_at = datetime.now(timezone.utc)
-                self.db.upsert_position(pos)
+                self.db.upsert_position(pos, conn=conn)
 
     def mark_to_market_and_check_exits(self, snapshots: dict[str, MarketSnapshot]) -> list[PaperOrder]:
         """Update unrealized PnL and trigger paper SL/TP exits deterministically."""
@@ -301,7 +414,6 @@ class PaperExecutionEngine:
                 pos.mark_price = px
                 pos.unrealized_pnl_usd = round(diff * pos.qty, 4)
                 pos.updated_at = datetime.now(timezone.utc)
-                self.db.upsert_position(pos)
 
                 hit_sl = (
                     pos.stop_loss is not None
@@ -313,32 +425,72 @@ class PaperExecutionEngine:
                     and ((pos.direction == Direction.LONG and px >= pos.take_profit)
                          or (pos.direction == Direction.SHORT and px <= pos.take_profit))
                 )
-                if hit_sl or hit_tp:
-                    exit_side = Side.SELL if pos.direction == Direction.LONG else Side.BUY
-                    fee_sched = EXCHANGE_FEE_SCHEDULE.get(
-                        (pos.exchange, pos.market_type), {"taker": 0.001}
+                if not (hit_sl or hit_tp):
+                    self.db.upsert_position(pos)
+                    continue
+
+                exit_side = Side.SELL if pos.direction == Direction.LONG else Side.BUY
+                fee_sched = EXCHANGE_FEE_SCHEDULE.get(
+                    (pos.exchange, pos.market_type), {"taker": 0.001}
+                )
+                exit_slip_bps = round(max(2.0, snap.spread_bps / 2.0), 3)
+                slip_mult = 1.0 - (exit_slip_bps / 10000.0) if exit_side == Side.SELL else 1.0 + (exit_slip_bps / 10000.0)
+                exec_px = round(px * slip_mult, 6)
+                fee = round(pos.qty * exec_px * fee_sched["taker"], 6)
+                exit_order = PaperOrder(
+                    client_order_id=f"exit_{pos.position_id}_{uuid4().hex[:8]}",
+                    bot_id=pos.bot_id,
+                    signal_id="sl_tp_exit",
+                    exchange=pos.exchange,
+                    symbol=pos.symbol,
+                    market_type=pos.market_type,
+                    side=exit_side,
+                    order_type=OrderType.MARKET,
+                    requested_qty=pos.qty,
+                    filled_qty=pos.qty,
+                    avg_fill_price=exec_px,
+                    fee_usd=fee,
+                    slippage_bps=exit_slip_bps,
+                    status=OrderStatus.FILLED,
+                    is_paper=True,
+                )
+                with self.db.transaction() as conn:
+                    self.db.upsert_position(pos, conn=conn)
+                    self.db.save_order(exit_order, conn=conn)
+                    self.db.save_fill(
+                        PaperFill(
+                            order_id=exit_order.order_id,
+                            bot_id=exit_order.bot_id,
+                            exchange=exit_order.exchange,
+                            symbol=exit_order.symbol,
+                            market_type=exit_order.market_type,
+                            side=exit_order.side,
+                            qty=exit_order.filled_qty,
+                            price=exec_px,
+                            fee_usd=fee,
+                            slippage_bps=exit_slip_bps,
+                            is_paper=True,
+                        ),
+                        conn=conn,
                     )
-                    fee = round(pos.qty * px * fee_sched["taker"], 6)
-                    exit_order = PaperOrder(
-                        client_order_id=f"exit_{pos.position_id}_{int(datetime.now(timezone.utc).timestamp())}",
-                        bot_id=pos.bot_id,
-                        signal_id="sl_tp_exit",
-                        exchange=pos.exchange,
-                        symbol=pos.symbol,
-                        market_type=pos.market_type,
-                        side=exit_side,
-                        order_type=OrderType.MARKET,
-                        requested_qty=pos.qty,
-                        filled_qty=pos.qty,
-                        avg_fill_price=px,
-                        fee_usd=fee,
-                        slippage_bps=2.0,
-                        status=OrderStatus.FILLED,
-                        is_paper=True,
+                    self._apply_fill_to_position_and_account(exit_order, px, conn=conn)
+                    self.db.log_audit(
+                        "PAPER_ORDER_FILLED",
+                        exit_order.bot_id,
+                        {
+                            "order_id": exit_order.order_id,
+                            "exchange": exit_order.exchange.value,
+                            "symbol": exit_order.symbol,
+                            "side": exit_order.side.value,
+                            "qty": exit_order.filled_qty,
+                            "avg_price": exit_order.avg_fill_price,
+                            "fee_usd": exit_order.fee_usd,
+                            "reason": "sl_tp_exit",
+                            "is_paper": True,
+                        },
+                        conn=conn,
                     )
-                    self.db.save_order(exit_order)
-                    self._apply_fill_to_position_and_account(exit_order, px)
-                    closed_orders.append(exit_order)
+                closed_orders.append(exit_order)
         return closed_orders
 
     def recover_on_startup(self) -> dict[str, Any]:
@@ -346,8 +498,15 @@ class PaperExecutionEngine:
         incomplete = self.db.list_incomplete_orders()
         recovered = 0
         for order in incomplete:
-            if order.filled_qty > 0:
+            fills = self.db.list_fills_for_order(order.order_id)
+            filled_from_fills = round(sum(f.qty for f in fills), 6)
+            if filled_from_fills > 0 and filled_from_fills >= round(order.requested_qty * 0.9999, 6):
+                order.filled_qty = filled_from_fills
                 order.status = OrderStatus.FILLED
+            elif filled_from_fills > 0:
+                order.filled_qty = filled_from_fills
+                order.status = OrderStatus.CANCELED
+                order.reject_reason = "unfilled_remainder_canceled_on_recovery"
             else:
                 order.status = OrderStatus.CANCELED
                 order.reject_reason = "canceled_on_crash_recovery"

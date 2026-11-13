@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import time
 from datetime import datetime, timezone
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from app.core.config import RiskPolicyConfig
 from app.core.models import (
@@ -14,6 +14,9 @@ from app.core.models import (
     RiskDecision,
     StrategySignal,
 )
+
+if TYPE_CHECKING:
+    from app.persistence.database import PaperDatabase
 
 
 def _correlation_bucket(symbol: str) -> str:
@@ -26,8 +29,9 @@ def _correlation_bucket(symbol: str) -> str:
 class GlobalRiskGuardian:
     """Central non-bypassable risk gate for all paper strategies and bots."""
 
-    def __init__(self, policy: RiskPolicyConfig) -> None:
+    def __init__(self, policy: RiskPolicyConfig, db: PaperDatabase | None = None) -> None:
         self.policy = policy
+        self._db = db
         self.emergency_stop_active: bool = False
         self.emergency_stop_reason: str | None = None
         self.circuit_breaker_tripped: bool = False
@@ -37,6 +41,39 @@ class GlobalRiskGuardian:
         self.daily_date: str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         self._recent_signals: dict[str, float] = {}
         self.alerts: list[dict[str, Any]] = []
+        self._load_persisted_state()
+
+    def _load_persisted_state(self) -> None:
+        if self._db is None:
+            return
+        state = self._db.load_risk_state("global_risk_guardian")
+        if not isinstance(state, dict):
+            return
+        self.emergency_stop_active = bool(state.get("emergency_stop_active", False))
+        self.emergency_stop_reason = state.get("emergency_stop_reason")
+        self.circuit_breaker_tripped = bool(state.get("circuit_breaker_tripped", False))
+        self.circuit_breaker_reason = state.get("circuit_breaker_reason")
+        self.peak_equity_usd = float(state.get("peak_equity_usd", 0.0) or 0.0)
+        self.daily_start_equity_usd = float(state.get("daily_start_equity_usd", 0.0) or 0.0)
+        saved_date = state.get("daily_date")
+        if isinstance(saved_date, str) and saved_date:
+            self.daily_date = saved_date
+
+    def _persist_state(self) -> None:
+        if self._db is None:
+            return
+        self._db.save_risk_state(
+            "global_risk_guardian",
+            {
+                "emergency_stop_active": self.emergency_stop_active,
+                "emergency_stop_reason": self.emergency_stop_reason,
+                "circuit_breaker_tripped": self.circuit_breaker_tripped,
+                "circuit_breaker_reason": self.circuit_breaker_reason,
+                "peak_equity_usd": self.peak_equity_usd,
+                "daily_start_equity_usd": self.daily_start_equity_usd,
+                "daily_date": self.daily_date,
+            },
+        )
 
     def _record_alert(self, level: str, message: str) -> None:
         self.alerts.insert(
@@ -53,6 +90,7 @@ class GlobalRiskGuardian:
         self.emergency_stop_active = True
         self.emergency_stop_reason = reason
         self._record_alert("CRITICAL", f"Emergency stop triggered: {reason}")
+        self._persist_state()
 
     def reset_emergency_stop(self) -> None:
         self.emergency_stop_active = False
@@ -60,14 +98,38 @@ class GlobalRiskGuardian:
         self.circuit_breaker_tripped = False
         self.circuit_breaker_reason = None
         self._record_alert("INFO", "Emergency stop and circuit breaker reset")
+        self._persist_state()
 
     def update_equity_watermarks(self, current_equity_usd: float) -> None:
         today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        changed = False
         if self.daily_start_equity_usd <= 0 or today != self.daily_date:
             self.daily_date = today
             self.daily_start_equity_usd = current_equity_usd
+            changed = True
         if current_equity_usd > self.peak_equity_usd:
             self.peak_equity_usd = current_equity_usd
+            changed = True
+        if changed:
+            self._persist_state()
+
+    def can_accept_new_signal(
+        self,
+        signal: StrategySignal,
+        positions: list[PaperPosition],
+    ) -> tuple[bool, str | None]:
+        """Lightweight pre-flight check to avoid rejection-storm DB bloat."""
+        if self.emergency_stop_active:
+            return False, "emergency_stop_active"
+        if self.circuit_breaker_tripped:
+            return False, "circuit_breaker_tripped"
+        if len(positions) >= self.policy.max_concurrent_positions:
+            return False, "max_concurrent_positions_reached"
+        dedup_key = f"{signal.exchange.value}:{signal.market_type.value}:{signal.symbol}:{signal.direction.value}:{signal.strategy_name}"
+        last_seen = self._recent_signals.get(dedup_key)
+        if last_seen is not None and (time.monotonic() - last_seen) < self.policy.duplicate_signal_window_sec:
+            return False, "duplicate_signal_suppressed"
+        return True, None
 
     def evaluate(
         self,
@@ -114,6 +176,7 @@ class GlobalRiskGuardian:
             self.circuit_breaker_tripped = True
             self.circuit_breaker_reason = f"daily_loss_limit ({daily_loss_pct:.2%})"
             self._record_alert("CRITICAL", self.circuit_breaker_reason)
+            self._persist_state()
             return RiskDecision(approved=False, reason="daily_loss_limit_exceeded", alerts=[self.circuit_breaker_reason])
 
         drawdown_pct = (
@@ -125,6 +188,7 @@ class GlobalRiskGuardian:
             self.circuit_breaker_tripped = True
             self.circuit_breaker_reason = f"max_drawdown ({drawdown_pct:.2%})"
             self._record_alert("CRITICAL", self.circuit_breaker_reason)
+            self._persist_state()
             return RiskDecision(approved=False, reason="max_drawdown_exceeded", alerts=[self.circuit_breaker_reason])
 
         # Stop-loss requirement

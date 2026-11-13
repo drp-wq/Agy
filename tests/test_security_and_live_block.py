@@ -121,3 +121,94 @@ def test_real_secrets_file_metadata_without_disclosure():
         meta = cred.metadata()
         assert meta["exchange"] == ex
         assert "api_secret" not in str(meta).lower() or "has_api_secret" in str(meta).lower()
+
+
+def test_real_ccxt_clients_block_all_write_and_non_get_paths():
+    """Verify real CCXT Binance/OKX/Bybit clients block camelCase, WS, implicit POST/PUT/DELETE/PATCH, and transport writes."""
+    import re
+    import ccxt
+    from app.exchanges.binance import BinanceAdapter
+
+    write_prefixes = (
+        "create_", "cancel_", "edit_", "withdraw", "transfer",
+        "set_leverage", "set_margin", "set_position", "add_margin", "reduce_margin",
+        "borrow_", "repay_", "close_position", "close_all", "place_", "submit_",
+    )
+    camel_prefixes = (
+        "createOrder", "createMarket", "createLimit", "createStop", "createTrigger",
+        "cancelOrder", "cancelAll", "editOrder", "withdraw", "transfer",
+        "setLeverage", "setMargin", "setPosition", "addMargin", "reduceMargin",
+        "borrow", "repay", "closePosition", "closeAll",
+    )
+    raw_write_re = re.compile(r"(post|put|delete|patch)", re.I)
+    safe_local = {"create_ohlcv_object", "create_safe_dictionary", "create_ccxt_trade_id"}
+
+    for adapter_cls in (BinanceAdapter, OKXAdapter, BybitAdapter):
+        adapter = adapter_cls()
+        try:
+            for client in (adapter._public_client, adapter._auth_client):
+                for attr in dir(client):
+                    fn = getattr(client, attr, None)
+                    if not callable(fn):
+                        continue
+                    qual = getattr(fn, "__qualname__", "")
+                    if "_blocked_stub" in qual:
+                        continue
+                    if attr.startswith(write_prefixes) and not attr.endswith("_id") and attr not in safe_local:
+                        raise AssertionError(f"{adapter_cls.__name__} left snake write method unblocked: {attr}")
+                    if attr.startswith(camel_prefixes):
+                        raise AssertionError(f"{adapter_cls.__name__} left camelCase write method unblocked: {attr}")
+                    if (
+                        any(ns in attr.lower() for ns in ("private", "sapi", "fapi", "dapi", "eapi", "papi", "v5"))
+                        and raw_write_re.search(attr)
+                        and not attr.startswith(("fetch", "load", "parse", "sign", "describe"))
+                    ):
+                        raise AssertionError(f"{adapter_cls.__name__} left implicit write endpoint unblocked: {attr}")
+
+                # Spot-check high-risk methods raise LiveExecutionBlockedError
+                for sample in ("createOrder", "cancelOrder", "create_order_ws", "close_position"):
+                    if hasattr(client, sample):
+                        with pytest.raises(LiveExecutionBlockedError):
+                            getattr(client, sample)("BTC/USDT", "limit", "buy", 1, 1)
+
+                # Transport-level GET-only allowlist must reject POST/PUT/DELETE/PATCH
+                for verb in ("POST", "PUT", "DELETE", "PATCH"):
+                    with pytest.raises(LiveExecutionBlockedError):
+                        client.request("order", "private", verb, {})
+                    with pytest.raises(LiveExecutionBlockedError):
+                        client.fetch("https://example.invalid/order", method=verb)
+
+                # Read-only allowlisted methods remain callable (not replaced by _blocked_stub)
+                for ro_method in ("load_markets", "fetch_ticker", "fetch_balance", "fetch_positions", "fetch_orders"):
+                    assert "_blocked_stub" not in getattr(getattr(client, ro_method), "__qualname__", "")
+
+                # fetch2 transport-level GET-only allowlist must reject POST/PUT/DELETE/PATCH
+                for verb in ("POST", "PUT", "DELETE", "PATCH"):
+                    with pytest.raises(LiveExecutionBlockedError):
+                        client.fetch2("order", "private", verb, {})
+        finally:
+            adapter.close()
+
+
+def test_secret_redaction_filter_args_and_patterns():
+    filt = SecretRedactionFilter(["my_secret_1234"])
+    rec_tuple = logging.LogRecord(
+        "test", logging.INFO, "", 0, "payload=%s token=%s", ("my_secret_1234", "tok_xyz"), None
+    )
+    filt.filter(rec_tuple)
+    assert "my_secret_1234" not in str(rec_tuple.args)
+    assert "[REDACTED]" in str(rec_tuple.args)
+
+    rec_kv = logging.LogRecord(
+        "test",
+        logging.INFO,
+        "",
+        0,
+        "headers: authorization=Bearer123 passphrase=p123 api_secret=s123",
+        None,
+        None,
+    )
+    filt.filter(rec_kv)
+    assert "Bearer123" not in rec_kv.msg
+    assert "p123" not in rec_kv.msg
+    assert "s123" not in rec_kv.msg

@@ -5,7 +5,7 @@ import {defineConfig} from 'vite';
 
 export default defineConfig(() => {
   return {
-    base: '/miniapp/',
+    base: process.env.VITE_BASE_PATH || '/aurora/',
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {

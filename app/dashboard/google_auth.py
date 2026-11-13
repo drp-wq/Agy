@@ -22,7 +22,10 @@ def load_config():
 
 def install(app):
     cfg = load_config()
+    cfg.setdefault("GOOGLE_OAUTH_CALLBACK_URL", os.getenv("GOOGLE_OAUTH_CALLBACK_URL") or CALLBACK)
     enabled = all(cfg.get(k) for k in ("GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GOOGLE_ALLOWED_EMAIL", "SESSION_SECRET"))
+    if enabled and len(cfg["SESSION_SECRET"]) < 32:
+        raise RuntimeError("SESSION_SECRET must be at least 32 characters when Google OAuth is enabled")
     app.add_middleware(SessionMiddleware, secret_key=cfg.get("SESSION_SECRET") or secrets.token_urlsafe(48), https_only=True, same_site="lax", max_age=3600)
     oauth = OAuth()
     if enabled:

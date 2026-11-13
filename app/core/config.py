@@ -92,6 +92,91 @@ class ExchangeCredentials:
     __str__ = __repr__
 
 
+class MidLowCapConfig(BaseModel):
+    """Feature-flagged configuration for adaptive mid/low-cap spot paper trading."""
+
+    enabled: bool = False
+    allow_short: bool = False
+    max_leverage: float = Field(default=1.0, ge=1.0, le=1.0)
+    low_cap_min_usd: float = Field(default=50_000_000.0, ge=1_000_000.0)
+    low_cap_max_usd: float = Field(default=300_000_000.0, ge=10_000_000.0)
+    mid_cap_min_usd: float = Field(default=300_000_000.0, ge=10_000_000.0)
+    mid_cap_max_usd: float = Field(default=10_000_000_000.0, ge=100_000_000.0)
+    market_cap_provider: str = "coingecko"
+    market_cap_cache_ttl_sec: float = Field(default=1800.0, ge=30.0)
+    market_cap_max_age_sec: float = Field(default=3600.0, ge=60.0)
+    market_cap_max_pages: int = Field(default=4, ge=1, le=10)
+    market_cap_min_request_interval_sec: float = Field(default=2.0, ge=0.0)
+    discovery_cache_ttl_sec: float = Field(default=900.0, ge=30.0)
+    max_discovered_symbols_per_exchange: int = Field(default=40, ge=1, le=200)
+    scan_batch_size: int = Field(default=12, ge=1, le=50)
+    min_24h_volume_usd: float = Field(default=1_000_000.0, ge=10_000.0)
+    max_spread_bps: float = Field(default=35.0, ge=1.0, le=500.0)
+    min_order_book_depth_usd: float = Field(default=25_000.0, ge=1_000.0)
+    min_history_candles: int = Field(default=60, ge=20, le=500)
+    max_market_data_age_sec: float = Field(default=30.0, ge=2.0, le=300.0)
+    max_turnover_ratio: float = Field(default=3.0, ge=0.1, le=20.0)
+    max_single_candle_volume_spike: float = Field(default=12.0, ge=2.0, le=100.0)
+    max_notional_to_depth_ratio: float = Field(default=0.05, ge=0.005, le=0.5)
+    max_positions_per_base: int = Field(default=1, ge=1, le=3)
+    allowed_strategies: tuple[str, ...] = (
+        "trend_following",
+        "breakout_retest",
+        "mean_reversion",
+    )
+    min_risk_reward_ratio: float = Field(default=2.0, ge=1.5, le=10.0)
+    max_risk_per_trade_pct: float = Field(default=0.0025, ge=0.0005, le=0.0025)
+    daily_loss_limit_pct: float = Field(default=0.01, ge=0.001, le=0.05)
+    max_simultaneous_positions: int = Field(default=3, ge=1, le=10)
+    min_oos_trades: int = Field(default=3, ge=1, le=50)
+    min_oos_net_expectancy_r: float = Field(default=0.0, ge=-1.0, le=5.0)
+    allocated_capital_usd: float = Field(default=2500.0, ge=100.0)
+
+
+class UnifiedTreasuryConfig(BaseModel):
+    """Feature-flagged configuration for unified 18-agent paper treasury and attribution."""
+
+    enabled: bool = False
+    max_agent_slots: int = Field(default=18, ge=1, le=18)
+    master_pool_currency: str = "USDT"
+    initial_master_capital: float = Field(default=10000.0, ge=0.0)
+    default_usdt_usd_rate: float = Field(default=0.9995, gt=0.5, lt=1.5)
+    max_single_agent_concentration_pct: float = Field(default=0.25, ge=0.01, le=1.0)
+    max_aggregate_allocated_pct: float = Field(default=0.85, ge=0.05, le=1.0)
+    rebalance_cooldown_sec: float = Field(default=300.0, ge=0.0)
+    agent_daily_loss_cap_pct: float = Field(default=0.02, ge=0.001, le=0.50)
+    require_ownership_verification: bool = True
+    paper_only: bool = True
+
+    @field_validator("paper_only")
+    @classmethod
+    def _validate_paper_only(cls, value: bool) -> bool:
+        if not value or not LIVE_EXECUTION_PERMANENTLY_DISABLED:
+            raise ValueError("Unified treasury is structurally paper-only.")
+        return True
+
+
+class WatchOnlyWalletsConfig(BaseModel):
+    """Read-only external watch-only wallet monitoring configuration."""
+
+    registry_path: Path = BASE_DIR / "config" / "watch_only_wallets.json"
+    solana_rpc_url: str = "https://api.mainnet-beta.solana.com"
+    rpc_timeout_sec: float = Field(default=8.0, ge=1.0, le=30.0)
+    rpc_max_retries: int = Field(default=2, ge=0, le=5)
+    rpc_min_interval_sec: float = Field(default=1.5, ge=0.0, le=60.0)
+    cache_ttl_sec: float = Field(default=60.0, ge=5.0, le=3600.0)
+    signing_enabled: bool = False
+    transfers_enabled: bool = False
+    external_writes: bool = False
+
+    @field_validator("signing_enabled", "transfers_enabled", "external_writes")
+    @classmethod
+    def _validate_readonly_flags(cls, value: bool) -> bool:
+        if value:
+            raise ValueError("Watch-only wallet signing, transfers, and external writes are permanently disabled.")
+        return False
+
+
 class EngineConfig(BaseModel):
     """Top-level validated engine configuration."""
 
@@ -109,6 +194,9 @@ class EngineConfig(BaseModel):
     dashboard_host: str = "127.0.0.1"
     dashboard_port: int = 8788
     risk: RiskPolicyConfig = Field(default_factory=RiskPolicyConfig)
+    mid_low_cap: MidLowCapConfig = Field(default_factory=MidLowCapConfig)
+    unified_treasury: UnifiedTreasuryConfig = Field(default_factory=UnifiedTreasuryConfig)
+    watch_only_wallets: WatchOnlyWalletsConfig = Field(default_factory=WatchOnlyWalletsConfig)
 
     @field_validator("exchanges")
     @classmethod
@@ -146,7 +234,26 @@ def load_environment(
     require_secrets_file: bool = True,
 ) -> LoadedEnvironment:
     """Load validated config and read-only credentials without ever exposing secrets."""
-    cfg = config or EngineConfig(secrets_path=secrets_path)
+    if config is not None:
+        cfg = config
+    else:
+        mlc_enabled = os.getenv("MID_LOW_CAP_AUTOTRADE_ENABLED", "false").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
+        treasury_enabled = os.getenv("UNIFIED_TREASURY_ENABLED", "false").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
+        cfg = EngineConfig(
+            secrets_path=secrets_path,
+            mid_low_cap=MidLowCapConfig(enabled=mlc_enabled),
+            unified_treasury=UnifiedTreasuryConfig(enabled=treasury_enabled),
+        )
     assert_paper_only(cfg.mode)
 
     raw_env: dict[str, str | None] = {}

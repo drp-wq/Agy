@@ -6,8 +6,34 @@
 *.key
 *.p12
 *.pfx
+*.jks
+*.keystore
+*.token
 *credentials*
 *secrets*
+*private_key*
+*privkey*
+*mnemonic*
+*seed_phrase*
+*wallet*secret*
+*wallet*key*
+*keypair*.json
+id_*.json
+policy.local.*
+*.policy.local.*
+*policy*secret*
+# Local configuration
+*.local.json
+*.local.yaml
+*.local.yml
+*.local.toml
+*.local.env
+/config/*.local.*
+/config/*secret*
+/config/*credentials*
+/config/*key*
+/config/*token*
+/config/*private*
 # Persistent data, trades and sensitive runtime telemetry
 /data/
 /backups/
@@ -15,11 +41,23 @@
 /validation72/*.json
 /validation72/*.jsonl
 /validation72/*.flag
+status.json
+status.tmp
+*.pid
 *.sqlite3
 *.sqlite3-*
 *.db
 *.db-*
 *.log
+# Backup archives and pre-edit backups
+*.pre-*
+*.before-*
+*.bak
+*.bak.*
+*.orig
+*.tar
+*.tar.gz
+*.tgz
 # Python/Node artifacts
 .venv/
 venv/
@@ -28,8 +66,10 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+node_modules
 node_modules/
 dist/
+frontend/node_modules
 frontend/node_modules/
 frontend/dist/
 # OS/editor

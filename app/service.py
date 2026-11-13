@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import datetime, timezone
+from decimal import Decimal
 from typing import Any
 
 from app.core.config import EngineConfig, LoadedEnvironment, load_environment
@@ -12,11 +13,16 @@ from app.core.logging_setup import setup_logging
 from app.core.security import LIVE_EXECUTION_PERMANENTLY_DISABLED, assert_paper_only
 from app.exchanges.registry import ExchangeRegistry
 from app.execution.bot_manager import MultiBotManager
+from app.execution.mid_low_cap_runner import MidLowCapAutoTradeRunner
 from app.execution.paper_engine import PaperExecutionEngine
 from app.persistence.database import PaperDatabase
 from app.risk.guardian import GlobalRiskGuardian
 from app.scanner.market_scanner import GlobalMarketScanner
 from app.strategies.orchestrator import AIStrategyOrchestrator
+from app.treasury import AgentStrategyAllocator, UnifiedTreasuryLedger, AttributionCategory
+from app.treasury.reconciliation_audit import audit_paper_pnl_coverage
+from app.treasury.paper_funding import settle_paper_funding
+from app.wallets import SolanaWatchOnlyMonitor, load_watch_only_wallets
 from app.telegram.adapter import TelegramAlertAdapter
 from app.telegram.commands import TelegramCommandHandler
 from app.telegram.config import TelegramConfig, load_telegram_config
@@ -45,10 +51,42 @@ class TradingEngineService:
         self.registry = ExchangeRegistry.from_credentials(self.env.credentials)
         self.scanner = GlobalMarketScanner(self.registry)
         self.orchestrator = AIStrategyOrchestrator()
-        self.risk = GlobalRiskGuardian(self.config.risk)
+        self.risk = GlobalRiskGuardian(self.config.risk, db=self.db)
         self.paper_engine = PaperExecutionEngine(self.db, self.risk)
         self.bot_manager = MultiBotManager(self.paper_engine, self.registry)
+        self.mid_low_cap_runner = MidLowCapAutoTradeRunner(
+            config=self.config.mid_low_cap,
+            registry=self.registry,
+            scanner=self.scanner,
+            orchestrator=self.orchestrator,
+            paper_engine=self.paper_engine,
+        )
+        self.treasury: UnifiedTreasuryLedger | None = (
+            UnifiedTreasuryLedger(self.db, self.config.unified_treasury)
+            if self.config.unified_treasury.enabled
+            else None
+        )
+        if self.treasury is not None:
+            self.treasury.initialize_default_slots(self.config.unified_treasury.max_agent_slots)
+        self.treasury_allocator: AgentStrategyAllocator | None = (
+            AgentStrategyAllocator(self.treasury, self.risk)
+            if self.treasury is not None
+            else None
+        )
+        self.watch_only_wallets = load_watch_only_wallets(
+            self.config.watch_only_wallets.registry_path
+        )
+        self.watch_only_monitor = SolanaWatchOnlyMonitor(
+            wallets=self.watch_only_wallets,
+            rpc_url=self.config.watch_only_wallets.solana_rpc_url,
+            timeout_sec=self.config.watch_only_wallets.rpc_timeout_sec,
+            max_retries=self.config.watch_only_wallets.rpc_max_retries,
+            min_request_interval_sec=self.config.watch_only_wallets.rpc_min_interval_sec,
+            cache_ttl_sec=self.config.watch_only_wallets.cache_ttl_sec,
+        )
 
+        if self.treasury is not None:
+            self.sync_paper_fill_fees_to_treasury()
         self._task: asyncio.Task[None] | None = None
         self._stop_event = asyncio.Event()
         self.cycle_count = 0
@@ -114,6 +152,71 @@ class TradingEngineService:
                 }
         await asyncio.gather(*(collect(k, v) for k, v in self.registry.all().items()))
 
+    def sync_paper_fill_fees_to_treasury(self) -> dict[str, Any]:
+        """Idempotently attribute verified paper fill fees; never invent realized PnL.
+
+        This is accounting-only: no exchange writes, transfers, or orders.
+        """
+        if self.treasury is None:
+            return {"enabled": False}
+        with self.db._lock:
+            rows = self.db._conn.execute(
+                "SELECT * FROM paper_fills ORDER BY timestamp, fill_id"
+            ).fetchall()
+        processed = 0
+        skipped = 0
+        for row in rows:
+            if not bool(row["is_paper"]):
+                skipped += 1
+                continue
+            try:
+                self.treasury.record_attribution(
+                    idempotency_key=f"paper_fill_fee:{row['fill_id']}",
+                    agent_id=row["bot_id"],
+                    exchange=row["exchange"],
+                    account_id=f"{row['exchange']}:paper",
+                    strategy="paper_fill_unmapped_strategy",
+                    symbol=row["symbol"],
+                    asset="USD",
+                    category=AttributionCategory.TRADING_FEE,
+                    amount=-Decimal(str(row["fee_usd"])),
+                )
+                processed += 1
+            except Exception:
+                logger.exception("Treasury fee attribution failed for paper fill")
+                skipped += 1
+        with self.db._lock:
+            closures = self.db._conn.execute("SELECT * FROM paper_realized_closures ORDER BY created_at, order_id").fetchall()
+        close_count = 0
+        for row in closures:
+            try:
+                self.treasury.record_attribution(
+                    idempotency_key=f"paper_close_pnl:{row['order_id']}",
+                    agent_id=row['bot_id'], exchange=row['exchange'],
+                    account_id=f"{row['exchange']}:paper", strategy="paper_close_unmapped_strategy",
+                    symbol=row['symbol'], asset="USD",
+                    category=AttributionCategory.TRADE_REALIZED_PNL,
+                    amount=Decimal(row['gross_realized_usd']),
+                )
+                close_count += 1
+            except Exception:
+                logger.exception("Treasury close PnL attribution failed")
+                skipped += 1
+        return {"paper_fills_seen": len(rows), "fees_processed_idempotently": processed,
+                "closures_attributed_idempotently": close_count,
+                "skipped": skipped, "realized_pnl_complete": False,
+                "note": "Recorded closures attributed; historical and funding completeness unverified."}
+
+    def paper_pnl_audit(self) -> dict[str, Any]:
+        """Read-only reconciliation coverage including unresolved legacy gaps."""
+        return audit_paper_pnl_coverage(self.db)
+
+    def record_evidenced_paper_funding(self, **settlement: str) -> dict[str, Any]:
+        """Only for explicitly evidenced paper settlements; no inferred schedule."""
+        if self.treasury is None:
+            raise RuntimeError("Paper treasury is disabled")
+        return settle_paper_funding(self.db, self.treasury, **settlement)
+
     async def run_cycle(self, fetch_all_tfs: bool = False) -> dict[str, Any]:
         assert_paper_only("paper")
         snapshots_list = await self.scanner.scan_all(fetch_all_tfs=fetch_all_tfs)
@@ -122,6 +225,11 @@ class TradingEngineService:
         orders = await self.bot_manager.process_signals_concurrently(
             signals, self.scanner.latest_snapshots
         )
+        mid_low_cap_summary: dict[str, Any] = {"enabled": False, "orders_processed": 0}
+        if self.config.mid_low_cap.enabled:
+            mid_low_cap_summary = await self.mid_low_cap_runner.run_cycle()
+        if self.treasury is not None:
+            self.sync_paper_fill_fees_to_treasury()
         self.cycle_count += 1
         self.last_cycle_at = datetime.now(timezone.utc)
         try:
@@ -133,7 +241,16 @@ class TradingEngineService:
             "snapshots": len(snapshots_list),
             "signals": len(signals),
             "orders_processed": len(orders),
+            "mid_low_cap": mid_low_cap_summary,
         }
+
+    async def sync_watch_only_wallets(self, force: bool = False) -> list[dict[str, Any]]:
+        try:
+            snaps = await self.watch_only_monitor.refresh_all(force=force)
+            return [s.model_dump(mode="json") for s in snaps]
+        except Exception as exc:
+            logger.warning("Watch-only wallet sync error: %s", type(exc).__name__)
+            return self.watch_only_monitor.all_cached_snapshots()
 
     async def _loop(self) -> None:
         await self.verify_auth_once()
@@ -141,6 +258,7 @@ class TradingEngineService:
             if asyncio.get_running_loop().time() - self._last_readonly_sync_monotonic >= 120:
                 self._last_readonly_sync_monotonic = asyncio.get_running_loop().time()
                 await self.sync_readonly_accounts()
+                await self.sync_watch_only_wallets()
             try:
                 await self.run_cycle(fetch_all_tfs=False)
             except Exception as exc:
@@ -209,6 +327,28 @@ class TradingEngineService:
             "calibration": self.orchestrator.calibrator.stats(),
             "reconciliation": self.paper_engine.reconcile_positions(),
             "recovery": self.recovery_report,
+            "mid_low_cap": self.mid_low_cap_runner.status_summary(),
+            "unified_treasury": (
+                self.treasury.overview_snapshot(readonly_snapshots=self.readonly_account_snapshots)
+                if self.treasury is not None
+                else {
+                    "enabled": False,
+                    "mode": "PAPER_ONLY",
+                    "live_order_submission": False,
+                    "external_writes": False,
+                    "signing_enabled": False,
+                    "transfers_enabled": False,
+                }
+            ),
+            "watch_only_wallets": {
+                "mode": "watch_only",
+                "read_only": True,
+                "signing_enabled": False,
+                "transfers_enabled": False,
+                "external_writes": False,
+                "counted_as_trading_cash": False,
+                "wallets": self.watch_only_monitor.all_cached_snapshots(),
+            },
             "telegram": {
                 "enabled": self.telegram_adapter.is_enabled,
                 "metrics": self.telegram_state.get_metrics() if self.telegram_state else {},

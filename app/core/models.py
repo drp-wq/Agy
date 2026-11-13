@@ -138,6 +138,8 @@ class MarketSnapshot(BaseModel):
     liquidity_score: float = 0.0
     regime: MarketRegime = MarketRegime.UNCERTAIN
     opportunity_score: float = 0.0
+    bids: list[tuple[float, float]] = Field(default_factory=list)
+    asks: list[tuple[float, float]] = Field(default_factory=list)
     candles_by_tf: dict[str, list[Candle]] = Field(default_factory=dict)
 
 

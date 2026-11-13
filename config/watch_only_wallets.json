@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "wallets": [
+    {
+      "id": "phantom-solana-primary",
+      "chain": "solana-mainnet",
+      "address": "FWTfn9ijTN9PE9H4Wcy1LKqFKgoQrxhBQDh13Lf57h5T",
+      "mode": "watch_only",
+      "signing_enabled": false,
+      "transfers_enabled": false,
+      "agent_access": "none"
+    }
+  ]
+}

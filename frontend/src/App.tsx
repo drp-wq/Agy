@@ -8,6 +8,7 @@ import {
   ClipboardList,
   PieChart,
   ShieldAlert,
+  Landmark,
   Bell,
   Server,
   RefreshCw,
@@ -56,6 +57,9 @@ const PortfolioAnalyticsView = lazy(() =>
 const RiskCommandView = lazy(() =>
   import('./components/workspaces/RiskCommandView').then((m) => ({ default: m.RiskCommandView }))
 );
+const TreasuryAuditView = lazy(() =>
+  import('./components/workspaces/TreasuryAuditView').then((m) => ({ default: m.TreasuryAuditView }))
+);
 const TelegramAlertsView = lazy(() =>
   import('./components/workspaces/TelegramAlertsView').then((m) => ({ default: m.TelegramAlertsView }))
 );
@@ -88,6 +92,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'orders', label: 'Paper Orders', shortLabel: 'Orders', group: 'Execution & Risk', icon: ClipboardList },
   { id: 'analytics', label: 'Portfolio Analytics', shortLabel: 'Analytics', group: 'Execution & Risk', icon: PieChart },
   { id: 'risk', label: 'Risk Management', shortLabel: 'Risk', group: 'Execution & Risk', icon: ShieldAlert },
+  { id: 'treasury', label: '18-Agent Treasury & Audit', shortLabel: 'Treasury', group: 'Execution & Risk', icon: Landmark },
   { id: 'alerts', label: 'Telegram Alerts', shortLabel: 'Alerts', group: 'Operations', icon: Bell },
   { id: 'system', label: 'System Health', shortLabel: 'System', group: 'Operations', icon: Server }
 ];
@@ -209,7 +214,7 @@ export default function App() {
         {/* Brand */}
         <div className="px-5 py-4 border-b border-white/[0.08] flex items-center justify-between">
           <span className="font-display font-bold text-base tracking-tight text-white whitespace-nowrap shrink-0">
-            NEON QUANT V3
+            AURORA V7
           </span>
           <span className="text-[10px] font-mono text-[#10B981]">PAPER</span>
         </div>
@@ -248,7 +253,17 @@ export default function App() {
         {/* Sidebar Security & Owner Context */}
         <div className="p-4 border-t border-white/[0.08] text-[11px] font-mono text-slate-400 space-y-1">
           <div className="text-slate-300 truncate">
-            {telegram.user?.username && telegram.initData && !authError ? `@${telegram.user.username}` : isDemo ? 'Demo Preview' : !telegram.initData ? 'Telegram Login Required' : authError ? 'Session Not Verified' : state ? 'Verified Telegram Session' : 'Verifying Session'}
+            {telegram.user?.username && telegram.initData && !authError
+              ? `@${telegram.user.username}`
+              : isDemo
+                ? 'Demo Preview'
+                : authError
+                  ? 'Session Not Verified'
+                  : state?.telegram_owner?.auth_method === 'signed_init_data'
+                    ? 'Verified Telegram Session'
+                    : state
+                      ? 'Authenticated Paper Session'
+                      : 'Verifying Session'}
           </div>
           <div className="text-[#10B981]">Live Execution Blocked</div>
         </div>
@@ -271,10 +286,10 @@ export default function App() {
           <div className="hidden md:flex items-center gap-2 text-xs font-mono text-slate-400 whitespace-nowrap shrink-0">
             <span
               className={`w-2 h-2 rounded-full ${
-                authError || !telegram.initData ? 'bg-[#EF4444]' : fetchError || !state ? 'bg-amber-400' : isDemo ? 'bg-[#8B5CF6]' : 'bg-[#10B981]'
+                authError ? 'bg-[#EF4444]' : fetchError || !state ? 'bg-amber-400' : isDemo ? 'bg-[#8B5CF6]' : 'bg-[#10B981]'
               }`}
             />
-            <span>{authError || !telegram.initData ? 'Telegram Auth Required' : fetchError ? 'Sync Failed' : !state ? 'Connecting…' : isDemo ? 'DEMO Mode' : 'FastAPI Synced'}</span>
+            <span>{authError ? 'Auth Required' : fetchError ? 'Sync Failed' : !state ? 'Connecting…' : isDemo ? 'DEMO Mode' : 'FastAPI Synced'}</span>
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
@@ -321,10 +336,10 @@ export default function App() {
           )}
 
           {/* Auth Error State */}
-          {(authError || (!telegram.initData && !loading)) && <AuthErrorBanner message={authError || 'Open this dashboard from your Telegram bot Mini App. Safari does not provide signed Telegram initData, so private account data is intentionally unavailable.'} onRetry={() => fetchAll(false)} />}
+          {authError && <AuthErrorBanner message={authError} onRetry={() => fetchAll(false)} />}
 
           {/* Generic Network Error State */}
-          {fetchError && !authError && telegram.initData && (
+          {fetchError && !authError && (
             <div className="nq-panel rounded-xl p-6 border border-[#EF4444]/35 text-xs space-y-3">
               <div className="text-sm font-semibold text-[#EF4444]">Backend Telemetry Unreachable</div>
               <p className="text-slate-300">{fetchError}</p>
@@ -341,7 +356,7 @@ export default function App() {
           {loading && !state && <LoadingTerminalSkeleton />}
 
           {/* Active Workspace Render */}
-          {state && !authError && !fetchError && telegram.initData && (
+          {state && !authError && !fetchError && (
             <Suspense fallback={<LoadingTerminalSkeleton />}>
               {activeSection === 'overview' && (
                 <GlobalOverviewView
@@ -396,6 +411,7 @@ export default function App() {
               {activeSection === 'orders' && <PaperOrdersView state={state} />}
               {activeSection === 'analytics' && <PortfolioAnalyticsView state={state} />}
               {activeSection === 'risk' && <RiskCommandView state={state} health={health} />}
+              {activeSection === 'treasury' && <TreasuryAuditView state={state} />}
               {activeSection === 'alerts' && <TelegramAlertsView state={state} telegram={telegram} />}
               {activeSection === 'system' && (
                 <SystemHealthView health={health} isDemo={isDemo} onRefresh={() => fetchAll(false)} />

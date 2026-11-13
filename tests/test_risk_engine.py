@@ -110,3 +110,81 @@ def test_daily_loss_circuit_breaker():
     assert d.approved is False
     assert d.reason == "daily_loss_limit_exceeded"
     assert guardian.circuit_breaker_tripped is True
+
+
+def test_risk_state_persists_across_restarts(tmp_path):
+    from app.persistence.database import PaperDatabase
+
+    db = PaperDatabase(tmp_path / "risk_persist.sqlite3")
+    policy = RiskPolicyConfig(max_concurrent_positions=1)
+    g1 = GlobalRiskGuardian(policy, db=db)
+    g1.update_equity_watermarks(12500.0)
+    g1.trigger_emergency_stop("persisted halt")
+
+    # Simulate process restart with new guardian instance on same DB
+    g2 = GlobalRiskGuardian(policy, db=db)
+    assert g2.emergency_stop_active is True
+    assert g2.emergency_stop_reason == "persisted halt"
+    assert g2.peak_equity_usd == 12500.0
+
+    ok, reason = g2.can_accept_new_signal(_sig(), [])
+    assert ok is False and reason == "emergency_stop_active"
+
+    g2.reset_emergency_stop()
+    g3 = GlobalRiskGuardian(policy, db=db)
+    assert g3.emergency_stop_active is False
+
+    pos = [
+        PaperPosition(
+            bot_id="b1",
+            exchange=ExchangeId.OKX,
+            symbol="ETH/USDT",
+            market_type=MarketType.SPOT,
+            direction=Direction.LONG,
+            qty=0.5,
+            entry_price=3000.0,
+            mark_price=3000.0,
+        )
+    ]
+    ok_max, reason_max = g3.can_accept_new_signal(_sig(), pos)
+    assert ok_max is False and reason_max == "max_concurrent_positions_reached"
+
+
+def test_per_exchange_per_symbol_and_portfolio_exposure_limits():
+    policy = RiskPolicyConfig(
+        max_portfolio_exposure_pct=0.50,
+        max_per_exchange_exposure_pct=0.30,
+        max_per_symbol_exposure_pct=0.20,
+        max_correlated_exposure_pct=0.40,
+    )
+    guardian = GlobalRiskGuardian(policy)
+    equity = 10000.0
+    # Existing OKX BTC/USDT position of $2000 (20% of equity -> at per-symbol cap)
+    pos = [
+        PaperPosition(
+            bot_id="b1",
+            exchange=ExchangeId.OKX,
+            symbol="BTC/USDT",
+            market_type=MarketType.PERP,
+            direction=Direction.LONG,
+            qty=0.04,
+            entry_price=50000.0,
+            mark_price=50000.0,
+        )
+    ]
+    d_sym = guardian.evaluate(_sig(exchange=ExchangeId.OKX, symbol="BTC/USDT"), 500.0, 1.0, equity, pos, _snap())
+    assert d_sym.approved is False
+    assert d_sym.reason == "exposure_limit_reached"
+
+    # Different symbol on same exchange (OKX ETH/USDT) has 10% exchange headroom ($1000)
+    d_ex = guardian.evaluate(
+        _sig(exchange=ExchangeId.OKX, symbol="ETH/USDT", sl=2900.0),
+        1500.0,
+        1.0,
+        equity,
+        pos,
+        _snap(exchange=ExchangeId.OKX, symbol="ETH/USDT"),
+    )
+    assert d_ex.approved is True
+    assert d_ex.adjusted_qty * 50000.0 <= 1000.0 + 1e-6
+    assert any("Notional clipped" in a for a in d_ex.alerts)

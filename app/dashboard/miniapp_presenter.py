@@ -522,6 +522,20 @@ def build_miniapp_state_payload(
         except ValueError:
             tg_id = None
 
+    treasury_reconciliation: dict[str, Any] | None = None
+    paper_pnl_audit: dict[str, Any] | None = None
+    if getattr(service, "treasury", None) is not None:
+        try:
+            treasury_reconciliation = service.treasury.reconcile(
+                readonly_snapshots=service.readonly_account_snapshots
+            )
+        except Exception:
+            treasury_reconciliation = None
+        try:
+            paper_pnl_audit = service.paper_pnl_audit()
+        except Exception:
+            paper_pnl_audit = None
+
     return {
         # Backwards-compatible fields
         "mode": "PAPER_ONLY",
@@ -548,4 +562,8 @@ def build_miniapp_state_payload(
         "risk": risk_payload,
         "analytics": analytics_payload,
         "alerts": alerts_payload[:50],
+        "unified_treasury": raw_snap.get("unified_treasury", {"enabled": False, "mode": "PAPER_ONLY"}),
+        "treasury_reconciliation": treasury_reconciliation,
+        "paper_pnl_audit": paper_pnl_audit,
+        "watch_only_wallets": raw_snap.get("watch_only_wallets", {"mode": "watch_only", "wallets": []}),
     }

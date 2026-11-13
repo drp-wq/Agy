@@ -109,7 +109,16 @@ class BaseExchangeAdapter:
                 last_exc = exc
                 self._consecutive_errors += 1
                 self._last_error = f"{type(exc).__name__}: {op_name}"
-                if attempt < self.max_retries:
+                if isinstance(exc, ccxt.RateLimitExceeded):
+                    # Honor throttling with longer exponential backoff and a
+                    # shared adapter cooldown if the final retry is exhausted.
+                    if attempt < self.max_retries:
+                        time.sleep(min(3.0 * (2**attempt), 30.0))
+                    else:
+                        self._circuit_open_until = max(
+                            self._circuit_open_until, time.monotonic() + 60.0
+                        )
+                elif attempt < self.max_retries:
                     time.sleep(0.35 * (2**attempt))
             except Exception as exc:
                 last_exc = exc

@@ -125,6 +125,8 @@ class GlobalMarketScanner:
                     liquidity_score=ind["liquidity_score"],
                     regime=ind["regime"],
                     opportunity_score=opp_score,
+                    bids=ob.bids,
+                    asks=ob.asks,
                     candles_by_tf=candles_by_tf,
                 )
                 self.latest_snapshots[self._key(adapter.exchange_id, symbol, market_type)] = snap

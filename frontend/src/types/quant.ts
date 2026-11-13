@@ -35,6 +35,7 @@ export type NavSectionId =
   | 'orders'
   | 'analytics'
   | 'risk'
+  | 'treasury'
   | 'alerts'
   | 'system';
 
@@ -290,6 +291,95 @@ export interface MiniAppHealthResponse {
   timestamp: number;
 }
 
+export interface UnifiedTreasurySlot {
+  agent_id: string;
+  slot_index: number;
+  name: string;
+  strategy: string;
+  exchange: ExchangeId | string;
+  account_id: string;
+  allowed_symbols: string[];
+  capital_budget: string;
+  reserved_capital: string;
+  available_capital: string;
+  trading_capital: string;
+  max_risk_per_trade_pct: string;
+  daily_loss_limit_pct: string;
+  max_drawdown_pct: string;
+  max_leverage: string;
+  status: string;
+  is_paper: boolean;
+  updated_at: string;
+}
+
+export interface UnifiedTreasuryState {
+  enabled: boolean;
+  mode: string;
+  live_order_submission?: boolean;
+  external_writes?: boolean;
+  signing_enabled?: boolean;
+  transfers_enabled?: boolean;
+  custody_model?: string;
+  max_agent_slots?: number;
+  configured_slots?: number;
+  active_slots?: number;
+  risk_limits?: {
+    max_single_agent_concentration_pct: number;
+    max_aggregate_allocated_pct: number;
+    agent_daily_loss_cap_pct: number;
+    rebalance_cooldown_sec: number;
+  };
+  slots?: UnifiedTreasurySlot[];
+}
+
+export interface TreasuryReconciliation {
+  balanced: boolean;
+  journal_entries_checked: number;
+  journal_imbalances: Array<Record<string, unknown>>;
+  pool_conservation_ok: boolean;
+  master_pool: {
+    asset: string;
+    total_capital: string;
+    free_capital: string;
+    reserved_capital: string;
+    slot_allocated_sum: string;
+  };
+  usd_valuation?: {
+    fx_pair: string;
+    fx_rate: string;
+    fx_timestamp: string;
+    total_usd: string;
+    free_usd: string;
+    reserved_usd: string;
+  };
+  ledger_scope?: string;
+  exchange_readonly_balances?: Record<
+    string,
+    {
+      status: string;
+      balances?: Record<string, number>;
+      positions?: Array<Record<string, unknown>>;
+      timestamp?: number;
+      error_type?: string;
+    }
+  >;
+}
+
+export interface PaperPnlAudit {
+  paper_fills: number;
+  fee_attributions: number;
+  recorded_closures: number;
+  closure_attributions: number;
+  funding_settlements: number;
+  funding_attributions: number;
+  account_realized_usd: string;
+  attributed_realized_usd: string;
+  unexplained_usd: string;
+  recorded_evidence_coverage_ok: boolean;
+  historical_completeness_certified: boolean;
+  reason?: string;
+}
+
 export interface MiniAppStateResponse {
   is_demo: boolean;
   live_execution_permanently_disabled: true;
@@ -309,4 +399,7 @@ export interface MiniAppStateResponse {
   risk: RiskCommandState;
   analytics: PortfolioAnalyticsData;
   alerts: TelegramAlertItem[];
+  unified_treasury?: UnifiedTreasuryState;
+  treasury_reconciliation?: TreasuryReconciliation | null;
+  paper_pnl_audit?: PaperPnlAudit | null;
 }
