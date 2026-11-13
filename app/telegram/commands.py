@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from app.core.config import BASE_DIR
 from app.core.security import LIVE_EXECUTION_PERMANENTLY_DISABLED
 from app.telegram.config import TelegramConfig
 from app.telegram.formatter import _fmt_num, _is_safe_https_url, esc, truncate_lines_safely
@@ -22,6 +23,8 @@ BOT_COMMANDS: list[dict[str, str]] = [
     {"command": "positions", "description": "Open paper positions"},
     {"command": "risk", "description": "Risk guardian & circuit breaker state"},
     {"command": "alerts", "description": "Recent alerts"},
+    {"command": "agy", "description": "Send a prompt to Antigravity (agy)"},
+    {"command": "agy_new", "description": "Start a fresh agy conversation"},
     {"command": "help", "description": "List read-only commands & Mini App"},
 ]
 
@@ -34,7 +37,7 @@ class TelegramCommandHandler:
         service: TradingEngineService,
         config: TelegramConfig,
         state_store: TelegramStateStore,
-        readiness_path: Path = Path("/root/multi-exchange-paper/data/readiness_watch.json"),
+        readiness_path: Path = BASE_DIR / "data" / "readiness_watch.json",
     ) -> None:
         self.service = service
         self.config = config
@@ -117,6 +120,8 @@ class TelegramCommandHandler:
             "• /positions — Open paper positions with SL/TP",
             "• /risk — Risk guardian, drawdown & circuit breakers",
             "• /alerts — Recent alerts & risk events",
+            "• /agy &lt;prompt&gt; — Prompt Antigravity (when bridge enabled)",
+            "• /agy_new — Reset Antigravity conversation",
             "• /help — Show this help & Mini App launcher",
             "",
             "<i>Read-only mode: order placement, withdrawals, and credential edits are disabled.</i>",

@@ -170,6 +170,60 @@ class DynamicSpotMarketDiscoverer:
         self._cache[ex_key] = (now_mono, capped)
         return capped
 
+    async def discover_global(
+        self,
+        adapters: list[BaseExchangeAdapter],
+        force: bool = False,
+    ) -> list[DiscoveredSpotMarket]:
+        """Discover and rank mid/low-cap USDT spot markets globally across all healthy exchanges."""
+        all_markets: list[DiscoveredSpotMarket] = []
+        for adapter in adapters:
+            try:
+                disc = await self.discover_for_exchange(adapter, force=force)
+                all_markets.extend(disc)
+            except Exception as exc:
+                logger.warning(
+                    "Global mid/low-cap discovery failed on %s: %s",
+                    adapter.exchange_id.value,
+                    type(exc).__name__,
+                )
+
+        # Global ordering: interleave LOW and MID cap markets across exchanges
+        low_caps = [m for m in all_markets if m.cap_record.band == MarketCapBand.LOW]
+        mid_caps = [m for m in all_markets if m.cap_record.band == MarketCapBand.MID]
+        low_caps.sort(key=lambda m: (m.cap_record.market_cap_usd or 0.0, m.exchange.value, m.symbol), reverse=True)
+        mid_caps.sort(key=lambda m: (m.cap_record.market_cap_usd or 0.0, m.exchange.value, m.symbol), reverse=True)
+
+        global_list: list[DiscoveredSpotMarket] = []
+        li, mi = 0, 0
+        while li < len(low_caps) or mi < len(mid_caps):
+            if li < len(low_caps):
+                global_list.append(low_caps[li])
+                li += 1
+            if mi < len(mid_caps):
+                global_list.append(mid_caps[mi])
+                mi += 1
+        return global_list
+
+    def next_global_scan_batch(
+        self,
+        discovered_global: list[DiscoveredSpotMarket],
+        batch_size: int | None = None,
+    ) -> list[DiscoveredSpotMarket]:
+        """Return a bounded rotating batch from the global cross-exchange pool."""
+        if not discovered_global:
+            return []
+        size = min(batch_size or self.config.scan_batch_size, len(discovered_global))
+        cursor_key = "__global__"
+        start = self._batch_cursor.get(cursor_key, 0) % len(discovered_global)
+        end = start + size
+        if end <= len(discovered_global):
+            batch = discovered_global[start:end]
+        else:
+            batch = discovered_global[start:] + discovered_global[: end - len(discovered_global)]
+        self._batch_cursor[cursor_key] = end % len(discovered_global)
+        return batch
+
     def next_scan_batch(
         self,
         exchange: ExchangeId,

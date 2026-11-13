@@ -6,11 +6,14 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from app.core.config import BASE_DIR
 from app.core.logging_setup import register_sensitive_value
 from app.core.security import validate_secrets_file_permissions
 
-DEFAULT_TELEGRAM_ENV = Path("/root/trading-secrets/telegram.env")
-DEFAULT_STATE_PATH = Path("/root/multi-exchange-paper/data/telegram_state.json")
+DEFAULT_TELEGRAM_ENV = Path(
+    os.getenv("TELEGRAM_ENV_PATH", str(BASE_DIR / "config" / "telegram.env"))
+)
+DEFAULT_STATE_PATH = BASE_DIR / "data" / "telegram_state.json"
 
 
 @dataclass

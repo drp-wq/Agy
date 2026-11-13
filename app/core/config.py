@@ -17,7 +17,7 @@ from app.core.security import (
     validate_secrets_file_permissions,
 )
 
-BASE_DIR = Path("/root/multi-exchange-paper")
+BASE_DIR = Path(__file__).resolve().parents[2]
 DEFAULT_SECRETS_PATH = Path("/root/trading-secrets/exchanges.env")
 SUPPORTED_EXCHANGES: tuple[str, ...] = ("okx", "bybit", "binance")
 
@@ -28,7 +28,7 @@ class RiskPolicyConfig(BaseModel):
     max_portfolio_exposure_pct: float = Field(default=0.60, ge=0.05, le=1.0)
     max_per_exchange_exposure_pct: float = Field(default=0.40, ge=0.05, le=1.0)
     max_per_symbol_exposure_pct: float = Field(default=0.20, ge=0.02, le=0.50)
-    max_concurrent_positions: int = Field(default=8, ge=1, le=50)
+    max_concurrent_positions: int = Field(default=18, ge=1, le=50)
     daily_loss_limit_pct: float = Field(default=0.03, ge=0.005, le=0.20)
     max_drawdown_pct: float = Field(default=0.10, ge=0.01, le=0.50)
     max_leverage: float = Field(default=3.0, ge=1.0, le=10.0)
@@ -249,8 +249,12 @@ def load_environment(
             "yes",
             "on",
         }
+        dash_host = os.getenv("DASHBOARD_HOST", "127.0.0.1").strip() or "127.0.0.1"
+        dash_port = int(os.getenv("DASHBOARD_PORT", "8788").strip() or "8788")
         cfg = EngineConfig(
             secrets_path=secrets_path,
+            dashboard_host=dash_host,
+            dashboard_port=dash_port,
             mid_low_cap=MidLowCapConfig(enabled=mlc_enabled),
             unified_treasury=UnifiedTreasuryConfig(enabled=treasury_enabled),
         )

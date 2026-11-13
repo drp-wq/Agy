@@ -34,6 +34,7 @@ policy.local.*
 /config/*key*
 /config/*token*
 /config/*private*
+/config/telegram.env
 # Persistent data, trades and sensitive runtime telemetry
 /data/
 /backups/

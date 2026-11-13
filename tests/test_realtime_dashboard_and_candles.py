@@ -312,10 +312,12 @@ def test_dashboard_html_realtime_chart_responsiveness_and_js_syntax(tmp_path: Pa
         assert proc.returncode == 0, f"Inline JS syntax error: {proc.stderr}"
 
     # Verify Aurora / Miniapp ProMarketChart + chartRefresh helper includes auto-refresh, cancellation, and backoff
+    from app.core.config import BASE_DIR
+
     aurora_chart = (
-        Path("/root/multi-exchange-paper/frontend/src/components/charts/ProMarketChart.tsx").read_text(encoding="utf-8")
+        (BASE_DIR / "frontend/src/components/charts/ProMarketChart.tsx").read_text(encoding="utf-8")
         + "\n"
-        + Path("/root/multi-exchange-paper/frontend/src/utils/chartRefresh.ts").read_text(encoding="utf-8")
+        + (BASE_DIR / "frontend/src/utils/chartRefresh.ts").read_text(encoding="utf-8")
     )
     for marker in ("CHART_REFRESH_MS = 6000", "AbortController", "visibilityState", "backoffMsRef"):
         assert marker in aurora_chart

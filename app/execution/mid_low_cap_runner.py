@@ -144,22 +144,14 @@ class MidLowCapAutoTradeRunner:
         self.last_rejections = []
         self.last_orders = []
 
-        # 1. Discover USDT spot markets in LOW/MID cap bands across healthy exchanges
-        discovered_all: list[DiscoveredSpotMarket] = []
-        batch_all: list[DiscoveredSpotMarket] = []
-        for adapter in self.registry.all().values():
-            if not adapter.health_status().get("healthy", False):
-                continue
-            try:
-                disc = await self.discoverer.discover_for_exchange(adapter)
-                discovered_all.extend(disc)
-                batch_all.extend(self.discoverer.next_scan_batch(adapter.exchange_id, disc))
-            except Exception as exc:
-                logger.warning(
-                    "Mid/low-cap discovery failed on %s: %s",
-                    adapter.exchange_id.value,
-                    type(exc).__name__,
-                )
+        # 1. Discover USDT spot markets globally in LOW/MID cap bands across healthy exchanges
+        healthy_adapters = [
+            adapter
+            for adapter in self.registry.all().values()
+            if adapter.health_status().get("healthy", False)
+        ]
+        discovered_all = await self.discoverer.discover_global(healthy_adapters)
+        batch_all = self.discoverer.next_global_scan_batch(discovered_all)
 
         self.last_discovered_count = len(discovered_all)
 

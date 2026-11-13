@@ -12,6 +12,7 @@ from app.core.models import OrderStatus, PaperOrder, PaperPosition
 from app.telegram.client import TelegramAPIError, TelegramClient
 from app.telegram.config import TelegramConfig
 from app.telegram.formatter import format_alert_html
+from app.core.config import BASE_DIR
 from app.telegram.models import AlertEventType, AlertSeverity, TelegramAlertEvent
 from app.telegram.state import TelegramStateStore
 
@@ -20,7 +21,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("multi_exchange.telegram.adapter")
 
-DEFAULT_READINESS_PATH = Path("/root/multi-exchange-paper/data/readiness_watch.json")
+DEFAULT_READINESS_PATH = BASE_DIR / "data" / "readiness_watch.json"
 
 
 class TelegramAlertAdapter:

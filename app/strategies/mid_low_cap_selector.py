@@ -17,7 +17,7 @@ from app.core.models import (
 )
 from app.execution.paper_engine import EXCHANGE_FEE_SCHEDULE
 from app.scanner.indicators import compute_indicators
-from app.scanner.market_cap import MarketCapRecord
+from app.scanner.market_cap import MarketCapBand, MarketCapRecord
 from app.strategies.base import BaseStrategy
 from app.strategies.orchestrator import AIStrategyOrchestrator
 
@@ -25,6 +25,13 @@ REGIME_STRATEGY_MAP: dict[MarketRegime, tuple[str, ...]] = {
     MarketRegime.TRENDING_BULLISH: ("trend_following", "breakout_retest"),
     MarketRegime.TRENDING_BEARISH: ("trend_following", "breakout_retest"),
     MarketRegime.RANGING: ("mean_reversion", "breakout_retest"),
+}
+
+# Low-cap markets favor breakout_retest & momentum over mean-reversion
+LOW_CAP_REGIME_STRATEGY_MAP: dict[MarketRegime, tuple[str, ...]] = {
+    MarketRegime.TRENDING_BULLISH: ("breakout_retest", "trend_following"),
+    MarketRegime.TRENDING_BEARISH: ("trend_following", "breakout_retest"),
+    MarketRegime.RANGING: ("breakout_retest", "mean_reversion"),
 }
 
 
@@ -62,14 +69,20 @@ class MidLowCapStrategySelector:
         self.config = config or MidLowCapConfig()
         self._oos_cache: dict[tuple[str, str, str, int], dict[str, Any]] = {}
 
-    def _allowed_for_regime(self, regime: MarketRegime) -> list[BaseStrategy]:
-        regime_names = REGIME_STRATEGY_MAP.get(regime, ())
+    def _allowed_for_regime(
+        self,
+        regime: MarketRegime,
+        cap_band: MarketCapBand | None = None,
+    ) -> list[BaseStrategy]:
+        strat_map = LOW_CAP_REGIME_STRATEGY_MAP if cap_band == MarketCapBand.LOW else REGIME_STRATEGY_MAP
+        regime_names = strat_map.get(regime, ())
         allowed = set(self.config.allowed_strategies)
-        return [
-            s
+        by_name = {
+            s.name: s
             for s in self.orchestrator.strategies
             if s.name in allowed and s.name in regime_names and regime in s.supported_regimes
-        ]
+        }
+        return [by_name[name] for name in regime_names if name in by_name]
 
     def walk_forward_net_oos(
         self,
@@ -225,7 +238,10 @@ class MidLowCapStrategySelector:
         for snap in snapshots:
             if snap.market_type != MarketType.SPOT:
                 continue
-            eligible = self._allowed_for_regime(snap.regime)
+            base = snap.symbol.split("/")[0].upper()
+            cap_rec = cap_records.get(base)
+            cap_band = cap_rec.band if cap_rec else None
+            eligible = self._allowed_for_regime(snap.regime, cap_band=cap_band)
             if not eligible:
                 diagnostics.append(
                     {"symbol": snap.symbol, "exchange": snap.exchange.value, "reason": f"regime_not_permitted:{snap.regime.value}"}
@@ -239,6 +255,7 @@ class MidLowCapStrategySelector:
             slippage_pct = max(0.0002, (snap.spread_bps / 10000.0) * 0.6)
             candles = snap.candles_by_tf.get("15m") or snap.candles_by_tf.get("1h") or []
 
+            candidates_for_symbol: list[StrategySignal] = []
             for strat in eligible:
                 sig = strat.evaluate(snap, self.orchestrator.calibrator)
                 if sig is None:
@@ -321,11 +338,23 @@ class MidLowCapStrategySelector:
                         "oos": oos,
                     },
                 }
-                selected.append(sig)
+                candidates_for_symbol.append(sig)
+
+            if candidates_for_symbol:
+                candidates_for_symbol.sort(
+                    key=lambda s: (
+                        s.metadata.get("mid_low_cap", {}).get("oos", {}).get("net_expectancy_r", 0.0),
+                        s.metadata.get("mid_low_cap", {}).get("net_rr", 0.0),
+                        s.confidence_score,
+                    ),
+                    reverse=True,
+                )
+                selected.append(candidates_for_symbol[0])
 
         selected.sort(
             key=lambda s: (
                 s.metadata.get("mid_low_cap", {}).get("oos", {}).get("net_expectancy_r", 0.0),
+                s.metadata.get("mid_low_cap", {}).get("net_rr", 0.0),
                 s.confidence_score * s.risk_reward_ratio,
             ),
             reverse=True,

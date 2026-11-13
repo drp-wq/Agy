@@ -14,6 +14,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
+from app.core.config import BASE_DIR
 from app.core.models import ExchangeId, MarketType
 from app.core.security import LIVE_EXECUTION_PERMANENTLY_DISABLED, assert_paper_only
 from app.dashboard.auth import DashboardAuthConfig, make_auth_dependency, security
@@ -321,7 +322,7 @@ def create_dashboard_app(
 
     @app.get("/api/miniapp/state")
     async def miniapp_state(_user: str = Depends(require_miniapp_auth)) -> dict[str, Any]:
-        readiness_path = Path("/root/multi-exchange-paper/data/readiness_watch.json")
+        readiness_path = BASE_DIR / "data" / "readiness_watch.json"
         readiness: dict[str, Any] | None = None
         if readiness_path.exists():
             try:

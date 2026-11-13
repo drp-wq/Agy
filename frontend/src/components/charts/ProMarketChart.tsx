@@ -283,7 +283,7 @@ export const ProMarketChart: React.FC<ProMarketChartProps> = ({
       },
       rightPriceScale: { borderColor: 'rgba(148, 163, 184, 0.14)' },
       timeScale: { borderColor: 'rgba(148, 163, 184, 0.14)', timeVisible: true, secondsVisible: false },
-      handleScroll: { mouseWheel: true, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: false },
+      handleScroll: { mouseWheel: true, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: true },
       handleScale: { axisPressedMouseMove: true, mouseWheel: true, pinch: true }
     });
 
@@ -752,7 +752,7 @@ export const ProMarketChart: React.FC<ProMarketChartProps> = ({
               No OHLCV candles returned for {exchange.toUpperCase()} {symbol} ({timeframe}).
             </div>
           )}
-          <div ref={mainContainerRef} className="w-full" />
+          <div ref={mainContainerRef} className="w-full touch-none" />
           {oscillator !== 'none' && (
             <div className="border-t border-white/[0.08]">
               <div className="px-4 py-1 text-[10px] font-mono text-slate-400 uppercase bg-[#080D1A]">

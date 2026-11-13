@@ -5,8 +5,10 @@ from __future__ import annotations
 import asyncio
 import logging
 
+from app.telegram.agy_bridge import AgyTelegramBridge, chunk_telegram_text, is_agy_bridge_enabled
 from app.telegram.client import TelegramAPIError, TelegramClient
 from app.telegram.commands import BOT_COMMANDS, TelegramCommandHandler
+from app.telegram.formatter import esc
 from app.telegram.state import TelegramStateStore
 
 logger = logging.getLogger("multi_exchange.telegram.poller")
@@ -28,6 +30,20 @@ class TelegramPollingWorker:
         self.poll_timeout_sec = poll_timeout_sec
         self._stop_event = asyncio.Event()
         self._task: asyncio.Task[None] | None = None
+        self._agy_bridge = AgyTelegramBridge()
+        self._agy_tasks: set[asyncio.Task[None]] = set()
+
+    async def _run_agy_and_reply(self, prompt: str) -> None:
+        try:
+            reply = await self._agy_bridge.run_prompt(prompt)
+            for chunk in chunk_telegram_text(reply):
+                await self.client.send_message(f"🤖 <pre>{esc(chunk)}</pre>")
+        except Exception as exc:
+            logger.warning("Failed to run/send agy reply: %s", type(exc).__name__)
+            try:
+                await self.client.send_message(f"⚠️ <b>agy bridge error:</b> <code>{esc(type(exc).__name__)}</code>")
+            except TelegramAPIError:
+                pass
 
     async def poll_once(self) -> int:
         """Fetch and process one batch of updates; returns count of updates processed."""
@@ -41,6 +57,41 @@ class TelegramPollingWorker:
             upd_id = upd.get("update_id")
             if isinstance(upd_id, int):
                 max_next_offset = max(max_next_offset, upd_id + 1)
+
+            message = upd.get("message")
+            text = str(message.get("text") or "").strip() if isinstance(message, dict) else ""
+            cmd = text.split()[0].split("@")[0].lower() if text.startswith("/") else ""
+
+            if (
+                is_agy_bridge_enabled()
+                and isinstance(message, dict)
+                and self.handler.is_authorized(message)
+                and cmd in ("/agy", "/agy_new")
+            ):
+                self.state.record_command_metric(authorized=True)
+                if cmd == "/agy_new":
+                    self._agy_bridge.reset_conversation()
+                    try:
+                        await self.client.send_message("🔄 Started a fresh <code>agy</code> conversation.")
+                    except TelegramAPIError as exc:
+                        logger.warning("Failed to send command reply: %s", exc)
+                else:
+                    prompt = text[len(text.split()[0]) :].strip()
+                    if not prompt:
+                        try:
+                            await self.client.send_message("Usage: <code>/agy your prompt here</code>")
+                        except TelegramAPIError as exc:
+                            logger.warning("Failed to send command reply: %s", exc)
+                    else:
+                        try:
+                            await self.client.send_message("🤖 <b>Running agy…</b>")
+                        except TelegramAPIError as exc:
+                            logger.warning("Failed to send command reply: %s", exc)
+                        task = asyncio.create_task(self._run_agy_and_reply(prompt))
+                        self._agy_tasks.add(task)
+                        task.add_done_callback(self._agy_tasks.discard)
+                processed += 1
+                continue
 
             reply = self.handler.handle_update(upd)
             if reply is not None:

@@ -37,6 +37,8 @@ def _basic_auth_header(username: str = "admin", password: str = "secret123456") 
 
 
 def _make_service(tmp_path: Path, treasury_enabled: bool = False) -> TradingEngineService:
+    from app.core.config import BASE_DIR
+
     cfg = EngineConfig(
         db_path=tmp_path / "paper.sqlite3",
         backup_dir=tmp_path / "backups",
@@ -44,7 +46,7 @@ def _make_service(tmp_path: Path, treasury_enabled: bool = False) -> TradingEngi
         mid_low_cap=MidLowCapConfig(enabled=False),
         unified_treasury=UnifiedTreasuryConfig(enabled=treasury_enabled),
         watch_only_wallets=WatchOnlyWalletsConfig(
-            registry_path=Path("/root/multi-exchange-paper/config/watch_only_wallets.json"),
+            registry_path=BASE_DIR / "config/watch_only_wallets.json",
             rpc_min_interval_sec=0.0,
         ),
     )
@@ -53,7 +55,9 @@ def _make_service(tmp_path: Path, treasury_enabled: bool = False) -> TradingEngi
 
 
 def test_watch_only_registry_and_security_invariants() -> None:
-    wallets = load_watch_only_wallets(Path("/root/multi-exchange-paper/config/watch_only_wallets.json"))
+    from app.core.config import BASE_DIR
+
+    wallets = load_watch_only_wallets(BASE_DIR / "config/watch_only_wallets.json")
     assert len(wallets) == 1
     w = wallets[0]
     assert w.id == "phantom-solana-primary"

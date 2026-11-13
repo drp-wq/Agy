@@ -15,8 +15,8 @@ import urllib.request
 from datetime import datetime, timezone
 from uuid import uuid4
 
-ROOT = pathlib.Path("/root/multi-exchange-paper")
-CONFIG = pathlib.Path("/root/trading-secrets/telegram.env")
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+CONFIG = pathlib.Path(os.getenv("TELEGRAM_ENV_PATH", str(ROOT / "config" / "telegram.env")))
 LEGACY_STATE = ROOT / "data/telegram_alert_state.json"
 SHARED_STATE = ROOT / "data/telegram_state.json"
 SHARED_LOCK = ROOT / "data/telegram_state.lock"
