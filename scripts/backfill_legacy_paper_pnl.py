@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import sqlite3
 import sys
 from pathlib import Path
 
@@ -11,7 +13,34 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from app.persistence.database import PaperDatabase
 from app.treasury.legacy_pnl_backfill import backfill_legacy_paper_pnl
+
+
+def _create_verified_backup(src_db: Path, backup_path: Path) -> dict[str, str]:
+    """Create a SQLite online backup and verify integrity_check + SHA-256."""
+    db = PaperDatabase(src_db)
+    try:
+        db.backup_to(backup_path)
+    finally:
+        db.close()
+
+    chk_conn = sqlite3.connect(str(backup_path))
+    try:
+        integrity = chk_conn.execute("PRAGMA integrity_check").fetchone()[0]
+        fk_violations = chk_conn.execute("PRAGMA foreign_key_check").fetchall()
+    finally:
+        chk_conn.close()
+    if integrity != "ok" or fk_violations:
+        raise RuntimeError(
+            f"Backup verification failed for {backup_path}: integrity={integrity}, fk={fk_violations}"
+        )
+    digest = hashlib.sha256(backup_path.read_bytes()).hexdigest()
+    return {
+        "backup_path": str(backup_path.resolve()),
+        "integrity_check": integrity,
+        "sha256": digest,
+    }
 
 
 def main() -> int:
@@ -49,6 +78,12 @@ def main() -> int:
         action="store_true",
         help="Explicitly allow targeting the live production DB path (disabled by default).",
     )
+    parser.add_argument(
+        "--backup-to",
+        type=Path,
+        default=None,
+        help="Optional path to write a verified SQLite online backup before running.",
+    )
     args = parser.parse_args()
 
     resolved = args.db_path.resolve()
@@ -58,6 +93,10 @@ def main() -> int:
             "Refusing to mutate production DB without --allow-production-db. Target a staging copy instead."
         )
 
+    backup_info = None
+    if args.backup_to is not None:
+        backup_info = _create_verified_backup(resolved, args.backup_to.resolve())
+
     result = backfill_legacy_paper_pnl(
         resolved,
         actor=args.actor,
@@ -65,6 +104,8 @@ def main() -> int:
         sync_treasury=not args.no_treasury_sync,
         flip_reversal_residual=args.flip_reversal_residual,
     )
+    if backup_info is not None:
+        result["pre_run_backup"] = backup_info
     print(json.dumps(result, indent=2, sort_keys=True))
     return 0
 

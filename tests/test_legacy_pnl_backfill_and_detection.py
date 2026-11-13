@@ -23,6 +23,7 @@ from app.treasury.legacy_pnl_backfill import (
 )
 from app.treasury.reconciliation_audit import (
     audit_paper_pnl_coverage,
+    audit_per_bot_paper_pnl,
     detect_missing_paper_order_evidence,
 )
 
@@ -391,6 +392,208 @@ def test_reversal_order_and_replay_detection_compatibility(tmp_path):
         assert abs(replay.per_bot_replayed["binance_perp_paper"]["reserved_margin_usd"] - 525.0) < 1e-6
     finally:
         svc.db.close()
+
+
+def test_six_accounts_multi_exchange_per_bot_backfill_and_float_ulp_zero(tmp_path):
+    """Verify all 6 paper accounts across Binance/Bybit/OKX reconcile to exact '0' unexplained PnL."""
+    db_path = tmp_path / "six_bots.sqlite3"
+    cfg = EngineConfig(
+        db_path=db_path,
+        log_dir=tmp_path / "logs",
+        unified_treasury=UnifiedTreasuryConfig(enabled=True, initial_master_capital=10000.0),
+    )
+    svc = TradingEngineService(config=cfg, enable_telegram=False)
+    bots = [
+        ("binance_perp_paper", ExchangeId.BINANCE, MarketType.PERP, 1500.0, 2.0),
+        ("binance_spot_paper", ExchangeId.BINANCE, MarketType.SPOT, 2500.0, 1.0),
+        ("bybit_perp_funding", ExchangeId.BYBIT, MarketType.PERP, 2000.0, 2.0),
+        ("bybit_spot_swing", ExchangeId.BYBIT, MarketType.SPOT, 2500.0, 1.0),
+        ("okx_perp_momentum", ExchangeId.OKX, MarketType.PERP, 2500.0, 2.0),
+        ("okx_spot_alpha", ExchangeId.OKX, MarketType.SPOT, 3000.0, 1.0),
+    ]
+    try:
+        for idx, (bot_id, ex, mkt, eq, lev) in enumerate(bots, start=1):
+            svc.db.ensure_account(bot_id, ex.value, eq)
+            open_ord = PaperOrder(
+                order_id=f"open_{bot_id}",
+                client_order_id=f"cid_open_{bot_id}",
+                bot_id=bot_id,
+                signal_id=f"sig_{idx}",
+                exchange=ex,
+                symbol="SOL/USDT",
+                market_type=mkt,
+                side=Side.BUY,
+                requested_qty=1.0,
+                filled_qty=1.0,
+                avg_fill_price=100.0,
+                leverage=lev,
+                fee_usd=0.1,
+                status=OrderStatus.FILLED,
+                is_paper=True,
+            )
+            _save_filled_order_with_fill(svc, open_ord, write_fill=True)
+            svc.paper_engine._apply_fill_to_position_and_account(open_ord, 100.0)
+
+            # Simulate legacy sl_tp_exit missing both paper_fills and paper_realized_closures
+            exit_px = 95.0 - idx
+            gross = round((exit_px - 100.0) * 1.0, 6)
+            fee = 0.05
+            exit_ord = PaperOrder(
+                order_id=f"exit_{bot_id}",
+                client_order_id=f"cid_exit_{bot_id}",
+                bot_id=bot_id,
+                signal_id="sl_tp_exit",
+                exchange=ex,
+                symbol="SOL/USDT",
+                market_type=mkt,
+                side=Side.SELL,
+                requested_qty=1.0,
+                filled_qty=1.0,
+                avg_fill_price=exit_px,
+                leverage=lev,
+                fee_usd=fee,
+                status=OrderStatus.FILLED,
+                is_paper=True,
+            )
+            with svc.db.transaction() as conn:
+                svc.db.save_order(exit_ord, conn=conn)
+                # Inject tiny IEEE-754 ULP noise (~1e-16) to verify _real_to_decimal handling
+                ulp_noise = 3e-16 if idx % 2 else -4e-16
+                svc.db.update_account_cash(
+                    bot_id,
+                    cash_delta=gross - fee + ulp_noise,
+                    realized_pnl_delta=gross - fee + ulp_noise,
+                    reserved_margin_delta=-(100.0 / lev),
+                    conn=conn,
+                )
+                conn.execute("DELETE FROM paper_positions WHERE bot_id = ?", (bot_id,))
+
+        svc.sync_paper_fill_fees_to_treasury()
+        before_bots = audit_per_bot_paper_pnl(svc.db)
+        assert len(before_bots) == 6
+        assert all(not b["reconciled"] for b in before_bots)
+        svc.db.close()
+
+        res = backfill_legacy_paper_pnl(db_path, actor="test_six_bots")
+        assert res["inserted_fills"] == 6
+        assert res["inserted_closures"] == 6
+        assert res["after_audit"]["unexplained_usd"] == "0"
+        assert res["after_audit"]["recorded_evidence_coverage_ok"] is True
+        assert res["after_audit"]["orders_evidence_complete"] is True
+        assert len(res["per_bot_audit"]) == 6
+        assert all(b["reconciled"] and b["unexplained_usd"] == "0" for b in res["per_bot_audit"])
+    finally:
+        pass
+
+
+def test_cli_backfill_backup_and_prod_guard(tmp_path, monkeypatch):
+    import json
+    import subprocess
+    import sys
+
+    db_path = tmp_path / "cli_test.sqlite3"
+    backup_path = tmp_path / "cli_backup.sqlite3"
+    cfg = EngineConfig(
+        db_path=db_path,
+        log_dir=tmp_path / "logs",
+        unified_treasury=UnifiedTreasuryConfig(enabled=True),
+    )
+    svc = TradingEngineService(config=cfg, enable_telegram=False)
+    svc.db.ensure_account("binance_spot_paper", "binance", 2500.0)
+    o1 = PaperOrder(
+        order_id="cli_o1",
+        client_order_id="cli_c1",
+        bot_id="binance_spot_paper",
+        signal_id="sig_cli",
+        exchange=ExchangeId.BINANCE,
+        symbol="BTC/USDT",
+        market_type=MarketType.SPOT,
+        side=Side.BUY,
+        requested_qty=0.1,
+        filled_qty=0.1,
+        avg_fill_price=1000.0,
+        fee_usd=0.1,
+        status=OrderStatus.FILLED,
+        is_paper=True,
+    )
+    _save_filled_order_with_fill(svc, o1, write_fill=True)
+    svc.paper_engine._apply_fill_to_position_and_account(o1, 1000.0)
+    o2 = PaperOrder(
+        order_id="cli_o2",
+        client_order_id="cli_c2",
+        bot_id="binance_spot_paper",
+        signal_id="sl_tp_exit",
+        exchange=ExchangeId.BINANCE,
+        symbol="BTC/USDT",
+        market_type=MarketType.SPOT,
+        side=Side.SELL,
+        requested_qty=0.1,
+        filled_qty=0.1,
+        avg_fill_price=950.0,
+        fee_usd=0.095,
+        status=OrderStatus.FILLED,
+        is_paper=True,
+    )
+    with svc.db.transaction() as conn:
+        svc.db.save_order(o2, conn=conn)
+        svc.db.update_account_cash(
+            "binance_spot_paper",
+            cash_delta=-5.095,
+            realized_pnl_delta=-5.095,
+            reserved_margin_delta=-100.0,
+            conn=conn,
+        )
+        conn.execute("DELETE FROM paper_positions WHERE bot_id = 'binance_spot_paper'")
+    svc.sync_paper_fill_fees_to_treasury()
+    svc.db.close()
+
+    dry = subprocess.run(
+        [sys.executable, "scripts/backfill_legacy_paper_pnl.py", "--db-path", str(db_path)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    dry_json = json.loads(dry.stdout)
+    assert dry_json["dry_run"] is True
+    assert dry_json["missing_fills_found"] == 1
+    assert dry_json["missing_closures_found"] == 1
+
+    apply_run = subprocess.run(
+        [
+            sys.executable,
+            "scripts/backfill_legacy_paper_pnl.py",
+            "--db-path",
+            str(db_path),
+            "--backup-to",
+            str(backup_path),
+            "--apply",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    apply_json = json.loads(apply_run.stdout)
+    assert apply_json["dry_run"] is False
+    assert apply_json["inserted_fills"] == 1
+    assert apply_json["inserted_closures"] == 1
+    assert apply_json["after_audit"]["unexplained_usd"] == "0"
+    assert apply_json["pre_run_backup"]["integrity_check"] == "ok"
+    assert backup_path.exists()
+
+    # Refusal guard when attempting --apply on live prod DB path without override flag
+    prod_guard = subprocess.run(
+        [
+            sys.executable,
+            "scripts/backfill_legacy_paper_pnl.py",
+            "--db-path",
+            "/root/multi-exchange-paper/data/paper_engine.sqlite3",
+            "--apply",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert prod_guard.returncode != 0
+    assert "Refusing to mutate production DB" in prod_guard.stderr
 
 
 def test_backfill_cli_dry_run_apply_and_prod_guard(tmp_path, monkeypatch, capsys):

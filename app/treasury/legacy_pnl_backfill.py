@@ -14,7 +14,7 @@ from app.core.security import assert_paper_only
 from app.persistence.database import PaperDatabase
 from app.treasury.ledger import UnifiedTreasuryLedger
 from app.treasury.models import AttributionCategory, AttributionRecord, to_decimal
-from app.treasury.reconciliation_audit import audit_paper_pnl_coverage
+from app.treasury.reconciliation_audit import audit_paper_pnl_coverage, audit_per_bot_paper_pnl
 
 
 class LegacyReplayMismatchError(RuntimeError):
@@ -487,6 +487,7 @@ def _sync_missing_treasury_attributions(db: PaperDatabase) -> dict[str, int]:
             category=AttributionCategory.TRADING_FEE,
             amount=-Decimal(str(row["fee_usd"])),
         )
+        existing_keys.add(key)
 
     closure_inserted = 0
     for row in closures:
@@ -504,6 +505,7 @@ def _sync_missing_treasury_attributions(db: PaperDatabase) -> dict[str, int]:
             category=AttributionCategory.TRADE_REALIZED_PNL,
             amount=Decimal(str(row["gross_realized_usd"])),
         )
+        existing_keys.add(key)
 
     return {
         "inserted_fee_attributions": fee_inserted,
@@ -547,6 +549,7 @@ def backfill_legacy_paper_pnl(
                 "missing_fill_order_ids": [f.order_id for f in replay.missing_fills],
                 "missing_closure_order_ids": [c.order_id for c in replay.missing_closures],
                 "before_audit": before_audit,
+                "per_bot_audit": audit_per_bot_paper_pnl(db),
                 "per_bot_replayed": replay.per_bot_replayed,
             }
 
@@ -657,6 +660,7 @@ def backfill_legacy_paper_pnl(
             raise RuntimeError(f"Post-backfill integrity check failed: {after_integrity}")
 
         after_audit = audit_paper_pnl_coverage(db)
+        after_per_bot = audit_per_bot_paper_pnl(db)
         return {
             "dry_run": False,
             "replayed_orders": replay.replayed_orders,
@@ -669,6 +673,7 @@ def backfill_legacy_paper_pnl(
             "treasury_attribution_sync": attr_sync,
             "before_audit": before_audit,
             "after_audit": after_audit,
+            "per_bot_audit": after_per_bot,
             "invariants_unchanged": True,
             "integrity": after_integrity,
             "per_bot_replayed": replay.per_bot_replayed,
