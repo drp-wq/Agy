@@ -36,3 +36,6 @@ frontend/dist/
 .DS_Store
 .idea/
 .vscode/
+
+/app/dashboard/static/
+*.zip
