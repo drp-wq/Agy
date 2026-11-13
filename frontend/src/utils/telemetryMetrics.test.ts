@@ -1,4 +1,4 @@
-import { describe, it } from 'node:test';
+import { describe, it, expect } from 'vitest';
 import assert from 'node:assert/strict';
 import {
   formatExchangeRealizedPnl,
@@ -7,8 +7,8 @@ import {
   summarizeExposureAndAllocation,
   summarizeLiveReadOnlyAuth,
   summarizeRealizedUnrealized
-} from './telemetryMetrics';
-import { buildDemoStateResponse } from '../services/demoFixtures';
+} from './telemetryMetrics.ts';
+import { buildDemoStateResponse } from '../services/demoFixtures.ts';
 
 describe('telemetryMetrics', () => {
   it('distinguishes UTC day realized PnL vs lifetime fallback when daily is unavailable', () => {

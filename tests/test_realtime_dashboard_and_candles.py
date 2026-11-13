@@ -311,7 +311,11 @@ def test_dashboard_html_realtime_chart_responsiveness_and_js_syntax(tmp_path: Pa
         proc = subprocess.run(["node", "--check", str(js_file)], capture_output=True, text=True)
         assert proc.returncode == 0, f"Inline JS syntax error: {proc.stderr}"
 
-    # Verify Aurora / Miniapp ProMarketChart source includes auto-refresh, cancellation, and backoff
-    aurora_chart = Path("/root/multi-exchange-paper/frontend/src/components/charts/ProMarketChart.tsx").read_text(encoding="utf-8")
+    # Verify Aurora / Miniapp ProMarketChart + chartRefresh helper includes auto-refresh, cancellation, and backoff
+    aurora_chart = (
+        Path("/root/multi-exchange-paper/frontend/src/components/charts/ProMarketChart.tsx").read_text(encoding="utf-8")
+        + "\n"
+        + Path("/root/multi-exchange-paper/frontend/src/utils/chartRefresh.ts").read_text(encoding="utf-8")
+    )
     for marker in ("CHART_REFRESH_MS = 6000", "AbortController", "visibilityState", "backoffMsRef"):
         assert marker in aurora_chart

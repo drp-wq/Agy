@@ -29,6 +29,12 @@ import {
   detectSupportResistance
 } from '../../utils/indicators';
 import { formatPrice } from '../../utils/formatters';
+import {
+  CHART_REFRESH_MS,
+  computeNextBackoffMs,
+  evaluateFeedFreshness,
+  mergeCandlesIncremental
+} from '../../utils/chartRefresh';
 
 interface ProMarketChartProps {
   exchange: ExchangeId;
@@ -58,9 +64,6 @@ const AVAILABLE_SYMBOLS = [
   'ARB/USDT'
 ];
 const AVAILABLE_TIMEFRAMES: Timeframe[] = ['1m', '5m', '15m', '1h', '4h', '1d'];
-const CHART_REFRESH_MS = 6000;
-const CHART_MAX_BACKOFF_MS = 30000;
-const CHART_STALE_SEC = 20;
 
 export const ProMarketChart: React.FC<ProMarketChartProps> = ({
   exchange,
@@ -157,28 +160,17 @@ export const ProMarketChart: React.FC<ProMarketChartProps> = ({
         );
         if (controller.signal.aborted || mySeq !== reqSeqRef.current) return;
 
-        setCandles((prev) => {
-          const merged = new Map<number, CandleBar>();
-          if (useIncremental) {
-            for (const bar of prev) merged.set(bar.time, bar);
-          }
-          for (const bar of res.candles) {
-            if (bar.time > 0) merged.set(bar.time, bar);
-          }
-          return Array.from(merged.values())
-            .sort((a, b) => a.time - b.time)
-            .slice(-240);
-        });
+        setCandles((prev) => mergeCandlesIncremental(prev, res.candles, useIncremental));
         setDataSource(res.source);
         setBackendSource(res.backend_source || (res.source === 'fast_api' ? 'exchange_rest' : 'demo'));
         setExchangeHealthy(res.exchange_healthy !== false && !res.stale);
         setLastUpdatedMs(Date.now());
         setErrorMsg(null);
-        backoffMsRef.current = CHART_REFRESH_MS;
+        backoffMsRef.current = computeNextBackoffMs(backoffMsRef.current, true);
       } catch (err) {
         if (err instanceof DOMException && err.name === 'AbortError') return;
         if (controller.signal.aborted || mySeq !== reqSeqRef.current) return;
-        backoffMsRef.current = Math.min(backoffMsRef.current * 2, CHART_MAX_BACKOFF_MS);
+        backoffMsRef.current = computeNextBackoffMs(backoffMsRef.current, false);
         setErrorMsg(err instanceof Error ? err.message : 'Failed to fetch market candles');
       } finally {
         if (mySeq === reqSeqRef.current) {
@@ -260,8 +252,12 @@ export const ProMarketChart: React.FC<ProMarketChartProps> = ({
 
   const latestBar = hoveredBar || (candles.length > 0 ? candles[candles.length - 1] : null);
   const latestRsi = indicators.rsi.length > 0 ? indicators.rsi[indicators.rsi.length - 1].value : null;
-  const ageSec = lastUpdatedMs > 0 ? Math.max(0, Math.floor((nowMs - lastUpdatedMs) / 1000)) : null;
-  const isStale = Boolean(errorMsg) || !exchangeHealthy || (ageSec !== null && ageSec > CHART_STALE_SEC);
+  const { ageSec, isStale } = evaluateFeedFreshness({
+    lastUpdatedMs,
+    nowMs,
+    exchangeHealthy,
+    errorMsg
+  });
 
   // Create Main Chart instance once per structural config (keeps pan/zoom across ticks!)
   useEffect(() => {
