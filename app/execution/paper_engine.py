@@ -374,6 +374,7 @@ class PaperExecutionEngine:
             self.db.upsert_position(pos, conn=conn)
         else:
             close_qty = min(pos.qty, order.filled_qty)
+            residual_qty = round(order.filled_qty - close_qty, 6)
             released_margin = round((close_qty * pos.entry_price) / max(pos.leverage, 1.0), 6)
             self.db.update_account_cash(
                 order.bot_id,
@@ -393,6 +394,37 @@ class PaperExecutionEngine:
             if remaining <= 1e-8:
                 pos.qty = 0.0
                 self.db.upsert_position(pos, conn=conn)
+                if residual_qty > 1e-8:
+                    # Open opposite-direction position for executed reversal remainder so no filled qty disappears
+                    new_margin = round((residual_qty * order.avg_fill_price) / max(order.leverage, 1.0), 6)
+                    self.db.update_account_cash(
+                        order.bot_id,
+                        cash_delta=0.0,
+                        realized_pnl_delta=0.0,
+                        reserved_margin_delta=new_margin,
+                        conn=conn,
+                    )
+                    rev_diff = (
+                        (mark_price - order.avg_fill_price)
+                        if direction == Direction.LONG
+                        else (order.avg_fill_price - mark_price)
+                    )
+                    rev_pos = PaperPosition(
+                        bot_id=order.bot_id,
+                        exchange=order.exchange,
+                        symbol=order.symbol,
+                        market_type=order.market_type,
+                        direction=direction,
+                        qty=residual_qty,
+                        entry_price=order.avg_fill_price,
+                        mark_price=mark_price,
+                        leverage=order.leverage,
+                        stop_loss=order.stop_loss,
+                        take_profit=order.take_profit,
+                        unrealized_pnl_usd=round(rev_diff * residual_qty, 4),
+                        is_paper=True,
+                    )
+                    self.db.upsert_position(rev_pos, conn=conn)
             else:
                 pos.qty = remaining
                 pos.mark_price = mark_price
