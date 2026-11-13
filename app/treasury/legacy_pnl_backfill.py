@@ -278,12 +278,28 @@ def _snapshot_invariants(conn: sqlite3.Connection) -> dict[str, Any]:
     ).fetchone()[0]
     journal_entries = conn.execute("SELECT COUNT(*) FROM treasury_journal_entries").fetchone()[0]
     journal_lines = conn.execute("SELECT COUNT(*) FROM treasury_journal_lines").fetchone()[0]
+    positions = [
+        dict(r)
+        for r in conn.execute(
+            "SELECT position_id, bot_id, exchange, symbol, market_type, direction, qty, entry_price "
+            "FROM paper_positions ORDER BY position_id"
+        ).fetchall()
+    ]
+    master_pool = [
+        dict(r)
+        for r in conn.execute(
+            "SELECT pool_id, total_capital, free_capital, reserved_capital "
+            "FROM treasury_master_pool ORDER BY pool_id"
+        ).fetchall()
+    ]
     return {
         "accounts": accounts,
+        "positions": positions,
         "orders_total": int(orders_total),
         "orders_filled": int(orders_filled),
         "journal_entries": int(journal_entries),
         "journal_lines": int(journal_lines),
+        "master_pool": master_pool,
     }
 
 
@@ -325,6 +341,7 @@ def _verify_db_integrity_and_uniqueness(conn: sqlite3.Connection) -> dict[str, A
             integrity == "ok"
             and not fk_violations
             and not dup_fill_ids
+            and not dup_fill_orders
             and not dup_closure_orders
             and not dup_attr_keys
         ),

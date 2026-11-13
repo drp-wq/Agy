@@ -391,3 +391,95 @@ def test_reversal_order_and_replay_detection_compatibility(tmp_path):
         assert abs(replay.per_bot_replayed["binance_perp_paper"]["reserved_margin_usd"] - 525.0) < 1e-6
     finally:
         svc.db.close()
+
+
+def test_backfill_cli_dry_run_apply_and_prod_guard(tmp_path, monkeypatch, capsys):
+    import json
+    import sys
+    from scripts import backfill_legacy_paper_pnl as cli
+
+    db_path = tmp_path / "cli_test.sqlite3"
+    cfg = EngineConfig(
+        db_path=db_path,
+        log_dir=tmp_path / "logs",
+        unified_treasury=UnifiedTreasuryConfig(enabled=True, initial_master_capital=10000.0),
+    )
+    svc = TradingEngineService(config=cfg, enable_telegram=False)
+    try:
+        svc.treasury.initialize_default_slots(18)
+        svc.db.ensure_account("binance_spot_paper", "binance", 2500.0)
+        o_open = PaperOrder(
+            order_id="cli_o1",
+            client_order_id="cli_c1",
+            bot_id="binance_spot_paper",
+            signal_id="sig_open",
+            exchange=ExchangeId.BINANCE,
+            symbol="SOL/USDT",
+            market_type=MarketType.SPOT,
+            side=Side.BUY,
+            requested_qty=2.0,
+            filled_qty=2.0,
+            avg_fill_price=100.0,
+            fee_usd=0.2,
+            status=OrderStatus.FILLED,
+            is_paper=True,
+        )
+        _save_filled_order_with_fill(svc, o_open, write_fill=True)
+        svc.paper_engine._apply_fill_to_position_and_account(o_open, 100.0)
+
+        o_exit = PaperOrder(
+            order_id="cli_o2",
+            client_order_id="cli_exit_1",
+            bot_id="binance_spot_paper",
+            signal_id="sl_tp_exit",
+            exchange=ExchangeId.BINANCE,
+            symbol="SOL/USDT",
+            market_type=MarketType.SPOT,
+            side=Side.SELL,
+            requested_qty=2.0,
+            filled_qty=2.0,
+            avg_fill_price=95.0,
+            fee_usd=0.19,
+            status=OrderStatus.FILLED,
+            is_paper=True,
+        )
+        with svc.db.transaction() as conn:
+            svc.db.save_order(o_exit, conn=conn)
+            svc.db.update_account_cash(
+                "binance_spot_paper",
+                cash_delta=-10.0 - 0.19,
+                realized_pnl_delta=-10.0 - 0.19,
+                reserved_margin_delta=-200.0,
+                conn=conn,
+            )
+            conn.execute("DELETE FROM paper_positions WHERE bot_id = 'binance_spot_paper'")
+        svc.sync_paper_fill_fees_to_treasury()
+    finally:
+        svc.db.close()
+
+    # Production DB guard must refuse --apply without --allow-production-db
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["backfill_legacy_paper_pnl.py", "--db-path", "/root/multi-exchange-paper/data/paper_engine.sqlite3", "--apply"],
+    )
+    with pytest.raises(SystemExit, match="Refusing to mutate production DB"):
+        cli.main()
+
+    # Dry-run must not mutate DB
+    monkeypatch.setattr(sys, "argv", ["backfill_legacy_paper_pnl.py", "--db-path", str(db_path)])
+    assert cli.main() == 0
+    dry_out = json.loads(capsys.readouterr().out)
+    assert dry_out["dry_run"] is True
+    assert dry_out["missing_fills_found"] == 1
+    assert dry_out["missing_closures_found"] == 1
+
+    # Apply must repair cleanly
+    monkeypatch.setattr(sys, "argv", ["backfill_legacy_paper_pnl.py", "--db-path", str(db_path), "--apply"])
+    assert cli.main() == 0
+    apply_out = json.loads(capsys.readouterr().out)
+    assert apply_out["dry_run"] is False
+    assert apply_out["inserted_fills"] == 1
+    assert apply_out["inserted_closures"] == 1
+    assert apply_out["after_audit"]["recorded_evidence_coverage_ok"] is True
+    assert abs(Decimal(apply_out["after_audit"]["unexplained_usd"])) < Decimal("1e-9")
