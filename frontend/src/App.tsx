@@ -339,7 +339,7 @@ export default function App() {
           {authError && <AuthErrorBanner message={authError} onRetry={() => fetchAll(false)} />}
 
           {/* Generic Network Error State */}
-          {fetchError && !authError && (
+          {fetchError && !authError && !state && (
             <div className="nq-panel rounded-xl p-6 border border-[#EF4444]/35 text-xs space-y-3">
               <div className="text-sm font-semibold text-[#EF4444]">Backend Telemetry Unreachable</div>
               <p className="text-slate-300">{fetchError}</p>
@@ -352,11 +352,23 @@ export default function App() {
             </div>
           )}
 
+          {fetchError && !authError && state && (
+            <div className="mb-4 px-4 py-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-xs text-amber-200 flex items-center justify-between gap-3">
+              <span>Telemetry refresh warning: {fetchError}. Showing last synchronized snapshot.</span>
+              <button
+                onClick={() => fetchAll(false)}
+                className="px-2.5 py-1 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-100 whitespace-nowrap shrink-0"
+              >
+                Retry
+              </button>
+            </div>
+          )}
+
           {/* Loading Skeleton */}
           {loading && !state && <LoadingTerminalSkeleton />}
 
           {/* Active Workspace Render */}
-          {state && !authError && !fetchError && (
+          {state && !authError && (
             <Suspense fallback={<LoadingTerminalSkeleton />}>
               {activeSection === 'overview' && (
                 <GlobalOverviewView

@@ -212,14 +212,123 @@ export const PositionsTerminalView: React.FC<PositionsTerminalViewProps> = ({
         </div>
       </div>
 
-      {/* Live Read-Only Guard Notice */}
+      {/* Live Read-Only Account Snapshots (Per-Exchange Verified Telemetry) */}
       {accountMode === 'live_readonly' && (
-        <EmptyStatePanel
-          title="Live Read-Only Exchange Accounts Not Authenticated"
-          description="Public market data feeds are online, but private exchange API keys are isolated or unconfigured in this session. Switch to Paper Engine to inspect active simulated positions."
-          actionLabel="Switch to Paper Engine"
-          onAction={() => setAccountMode('paper')}
-        />
+        (() => {
+          const anyAuthed = visibleExchanges.some((exId) => Boolean(state.exchanges[exId]?.private_auth_ok));
+          if (!anyAuthed) {
+            return (
+              <EmptyStatePanel
+                title="Live Read-Only Exchange Accounts Not Authenticated"
+                description="Public market data feeds are online, but private exchange API keys are isolated or unconfigured in this session. Switch to Paper Engine to inspect active simulated positions."
+                actionLabel="Switch to Paper Engine"
+                onAction={() => setAccountMode('paper')}
+              />
+            );
+          }
+          return (
+            <div className="space-y-4">
+              {visibleExchanges.map((exId) => {
+                const ex = state.exchanges[exId];
+                const meta = EXCHANGE_META[exId];
+                const snap = ex.live_readonly_snapshot;
+                const balances = snap?.status === 'ok' ? Object.entries(snap.balances || {}) : [];
+                const livePos = snap?.status === 'ok' ? (snap.positions || []) : [];
+                const filteredPos = livePos.filter((p) =>
+                  p.symbol.toLowerCase().includes(symbolSearch.toLowerCase())
+                );
+                const filteredBal = balances.filter(([asset]) =>
+                  asset.toLowerCase().includes(symbolSearch.toLowerCase())
+                );
+                return (
+                  <div key={exId} className="nq-panel rounded-xl overflow-hidden">
+                    <div className="px-4 py-3 border-b border-white/[0.08] bg-[#0B1120] flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 text-sm font-display font-semibold">
+                        <span className={meta.accentText}>{meta.name}</span>
+                        <span className="text-slate-300">Live Read-Only Snapshot</span>
+                      </div>
+                      <span
+                        className={`text-xs font-mono ${
+                          ex.private_auth_ok && snap?.status === 'ok' ? 'text-[#10B981]' : 'text-amber-300'
+                        }`}
+                      >
+                        {ex.private_auth_ok && snap?.status === 'ok'
+                          ? `Verified Read-Only (${balances.length} assets, ${livePos.length} positions)`
+                          : ex.private_auth_error || 'No verified snapshot'}
+                      </span>
+                    </div>
+
+                    {ex.private_auth_ok && snap?.status === 'ok' ? (
+                      <div className="p-4 space-y-4">
+                        <div>
+                          <div className="text-[11px] font-mono text-slate-400 mb-2">
+                            Verified Read-Only Asset Balances (Raw Exchange Units · No Inferred FX Sum)
+                          </div>
+                          {filteredBal.length === 0 ? (
+                            <div className="text-xs text-slate-400">No nonzero spot/account balances match filter.</div>
+                          ) : (
+                            <div className="flex flex-wrap gap-2">
+                              {filteredBal.map(([asset, qty]) => (
+                                <span
+                                  key={asset}
+                                  className="px-3 py-1.5 rounded-lg bg-white/[0.04] border border-white/[0.06] text-xs font-mono text-slate-200"
+                                >
+                                  {asset}: {Number(qty).toLocaleString(undefined, { maximumFractionDigits: 8 })}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        <div>
+                          <div className="text-[11px] font-mono text-slate-400 mb-2">
+                            Live Derivative Positions ({filteredPos.length})
+                          </div>
+                          {filteredPos.length === 0 ? (
+                            <div className="text-xs text-slate-400">No open live derivative contracts on {meta.name}.</div>
+                          ) : (
+                            <div className="overflow-x-auto">
+                              <table className="w-full text-left border-collapse text-xs font-mono">
+                                <thead>
+                                  <tr className="border-b border-white/[0.06] text-[11px] text-slate-400">
+                                    <th className="py-2 pr-4">Contract</th>
+                                    <th className="py-2 px-3">Side</th>
+                                    <th className="py-2 px-3 text-right">Contracts</th>
+                                    <th className="py-2 px-3 text-right">Entry</th>
+                                    <th className="py-2 pl-3 text-right">Unrealized PnL</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-white/[0.06]">
+                                  {filteredPos.map((lp, idx) => (
+                                    <tr key={`${lp.symbol}-${idx}`}>
+                                      <td className="py-2 pr-4 text-white font-semibold">{lp.symbol}</td>
+                                      <td className={`py-2 px-3 ${lp.side?.toUpperCase().includes('LONG') ? 'text-[#10B981]' : 'text-[#EF4444]'}`}>
+                                        {lp.side}
+                                      </td>
+                                      <td className="py-2 px-3 text-right text-slate-200">{lp.contracts}</td>
+                                      <td className="py-2 px-3 text-right text-slate-300">{formatPrice(lp.entry_price)}</td>
+                                      <td className={`py-2 pl-3 text-right font-semibold ${lp.unrealized_pnl >= 0 ? 'text-[#10B981]' : 'text-[#EF4444]'}`}>
+                                        {formatSignedUsd(lp.unrealized_pnl)}
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="p-4 text-xs text-amber-200">
+                        {ex.private_auth_error || 'Live read-only snapshot unavailable for this exchange.'}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })()
       )}
 
       {/* Independent Exchange Sections */}

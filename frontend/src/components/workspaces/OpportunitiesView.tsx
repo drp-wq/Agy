@@ -70,7 +70,11 @@ export const OpportunitiesView: React.FC<OpportunitiesViewProps> = ({ state, onI
                         {opp.symbol}{' '}
                         <span
                           className={`text-xs font-semibold ml-1 ${
-                            estimates.direction === 'LONG' ? 'text-[#10B981]' : 'text-[#EF4444]'
+                            estimates.direction === 'LONG'
+                              ? 'text-[#10B981]'
+                              : estimates.direction === 'SHORT'
+                                ? 'text-[#EF4444]'
+                                : 'text-slate-400'
                           }`}
                         >
                           {estimates.direction}
@@ -124,7 +128,8 @@ export const OpportunitiesView: React.FC<OpportunitiesViewProps> = ({ state, onI
                         <div className="flex justify-between">
                           <span className="text-slate-500">SL / TP:</span>
                           <span>
-                            {formatPrice(estimates.suggested_sl)} / {formatPrice(estimates.suggested_tp)}
+                            {estimates.suggested_sl > 0 ? formatPrice(estimates.suggested_sl) : '—'} /{' '}
+                            {estimates.suggested_tp > 0 ? formatPrice(estimates.suggested_tp) : '—'}
                           </span>
                         </div>
                         <div className="flex justify-between">

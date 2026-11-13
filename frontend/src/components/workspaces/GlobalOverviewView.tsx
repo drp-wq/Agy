@@ -11,6 +11,13 @@ import {
 import { EXCHANGE_META, SectionHeader } from '../common/TerminalPrimitives';
 import { ProMarketChart } from '../charts/ProMarketChart';
 import { formatAgeSeconds, formatPrice, formatSignedPct, formatSignedUsd, formatUsd } from '../../utils/formatters';
+import {
+  formatExchangeRealizedPnl,
+  summarizeDrawdown,
+  summarizeExposureAndAllocation,
+  summarizeLiveReadOnlyAuth,
+  summarizeRealizedUnrealized
+} from '../../utils/telemetryMetrics';
 
 interface GlobalOverviewViewProps {
   state: MiniAppStateResponse;
@@ -38,6 +45,10 @@ export const GlobalOverviewView: React.FC<GlobalOverviewViewProps> = ({
   const approvedOpportunities = state.opportunities.filter(
     (o) => o.estimates.screening_decision === 'APPROVED'
   );
+  const pnlSummary = summarizeRealizedUnrealized(state.risk);
+  const ddSummary = summarizeDrawdown(state.risk);
+  const exposureSummary = summarizeExposureAndAllocation(state.risk);
+  const liveAuthSummary = summarizeLiveReadOnlyAuth(state);
 
   return (
     <div className="space-y-6">
@@ -53,50 +64,64 @@ export const GlobalOverviewView: React.FC<GlobalOverviewViewProps> = ({
       />
 
       {/* Top KPI Strip (Single Elevation, Hairline Separated) */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="nq-panel rounded-xl p-4">
           <div className="text-xs text-slate-400">Aggregate Paper Equity</div>
           <div className="text-2xl font-mono font-bold text-white mt-1">
             {formatUsd(state.risk.total_paper_equity_usd)}
           </div>
-          <div className="text-[11px] font-mono text-slate-400 mt-1.5">
-            Live Read-Only: {state.risk.total_live_readonly_equity_usd !== null ? formatUsd(state.risk.total_live_readonly_equity_usd) : 'Not Authenticated'}
+          <div className="text-[11px] font-mono text-slate-400 mt-1.5" title={liveAuthSummary.detail}>
+            Live Read-Only: <span className={liveAuthSummary.authedCount > 0 ? 'text-[#10B981]' : 'text-amber-400'}>{liveAuthSummary.headline}</span>
+          </div>
+          <div className="text-[10px] font-mono text-slate-500 mt-0.5 truncate" title={liveAuthSummary.detail}>
+            {liveAuthSummary.detail}
           </div>
         </div>
 
         <div className="nq-panel rounded-xl p-4">
-          <div className="text-xs text-slate-400">Daily Realized / Unrealized</div>
+          <div className="text-xs text-slate-400">{pnlSummary.title}</div>
           <div
             className={`text-2xl font-mono font-bold mt-1 ${
-              state.risk.daily_realized_pnl_usd + state.risk.daily_unrealized_pnl_usd >= 0
-                ? 'text-[#10B981]'
-                : 'text-[#EF4444]'
+              pnlSummary.primaryUsd >= 0 ? 'text-[#10B981]' : 'text-[#EF4444]'
             }`}
           >
-            {formatSignedUsd(state.risk.daily_realized_pnl_usd + state.risk.daily_unrealized_pnl_usd)}
+            {formatSignedUsd(pnlSummary.primaryUsd)}
           </div>
           <div className="text-[11px] font-mono text-slate-400 mt-1.5">
-            Realized {formatSignedUsd(state.risk.daily_realized_pnl_usd)} · Open {formatSignedUsd(state.risk.daily_unrealized_pnl_usd)}
+            {pnlSummary.realizedLabel}:{' '}
+            {pnlSummary.realizedUsd !== null ? formatSignedUsd(pnlSummary.realizedUsd) : 'Unavailable'} · Open{' '}
+            {formatSignedUsd(pnlSummary.unrealizedUsd)}
           </div>
+          {pnlSummary.isDailyAvailable && pnlSummary.lifetimeRealizedUsd !== null && (
+            <div className="text-[10px] font-mono text-slate-500 mt-0.5">
+              Lifetime Realized: {formatSignedUsd(pnlSummary.lifetimeRealizedUsd)}
+            </div>
+          )}
         </div>
 
         <div className="nq-panel rounded-xl p-4">
-          <div className="text-xs text-slate-400">Gross Margin Exposure</div>
+          <div className="text-xs text-slate-400">Margin Reserved / Notional</div>
           <div className="text-2xl font-mono font-bold text-[#00E5FF] mt-1">
-            {formatUsd(state.risk.gross_margin_exposure_usd)}
+            {formatUsd(exposureSummary.reservedMarginUsd)}
           </div>
           <div className="text-[11px] font-mono text-slate-400 mt-1.5">
-            Allocation {state.risk.risk_allocation_pct.toFixed(1)}% · {openFutures.length} Open Futures
+            Notional {formatUsd(exposureSummary.grossNotionalUsd)} ({exposureSummary.notionalExposurePct.toFixed(1)}%)
+          </div>
+          <div className="text-[10px] font-mono text-slate-500 mt-0.5">
+            Margin Alloc {exposureSummary.marginAllocationPct.toFixed(1)}% · Free {formatUsd(exposureSummary.freeCapitalUsd)} · {openFutures.length} Open
           </div>
         </div>
 
         <div className="nq-panel rounded-xl p-4">
           <div className="text-xs text-slate-400">Drawdown & Circuit Breaker</div>
-          <div className="text-2xl font-mono font-bold text-white mt-1">
-            -{state.risk.current_drawdown_pct.toFixed(2)}%
+          <div className={`text-2xl font-mono font-bold mt-1 ${ddSummary.available ? 'text-white' : 'text-amber-300'}`}>
+            {ddSummary.displayValue}
           </div>
-          <div className="text-[11px] font-mono text-[#10B981] mt-1.5">
-            Limit -{state.risk.drawdown_limit_pct.toFixed(1)}% · {state.risk.circuit_breaker_state}
+          <div className="text-[11px] font-mono text-slate-400 mt-1.5">
+            {ddSummary.subtitle}
+          </div>
+          <div className={`text-[10px] font-mono mt-0.5 ${state.risk.emergency_stop_active ? 'text-[#EF4444]' : 'text-[#10B981]'}`}>
+            {state.risk.circuit_breaker_state}
           </div>
         </div>
       </div>
@@ -106,6 +131,15 @@ export const GlobalOverviewView: React.FC<GlobalOverviewViewProps> = ({
         {(['binance', 'bybit', 'okx'] as ExchangeId[]).map((exId) => {
           const ex = state.exchanges[exId];
           const meta = EXCHANGE_META[exId];
+          const exRealizedFmt = formatExchangeRealizedPnl(ex.realized_pnl_24h, ex.lifetime_realized_pnl);
+          const exNetDisplay =
+            ex.realized_pnl_24h !== null
+              ? formatSignedUsd(ex.realized_pnl_24h + ex.unrealized_pnl)
+              : formatSignedUsd(ex.unrealized_pnl);
+          const exNetPositive =
+            ex.realized_pnl_24h !== null
+              ? ex.realized_pnl_24h + ex.unrealized_pnl >= 0
+              : ex.unrealized_pnl >= 0;
           return (
             <div key={exId} className="nq-panel nq-panel-interactive rounded-xl p-4 flex flex-col justify-between">
               <div className="flex items-center justify-between">
@@ -121,19 +155,27 @@ export const GlobalOverviewView: React.FC<GlobalOverviewViewProps> = ({
                 </span>
               </div>
 
-              <div className="mt-3 flex items-baseline justify-between">
+              <div className="mt-3 flex items-baseline justify-between gap-2">
                 <div>
                   <div className="text-[11px] text-slate-400">Paper Equity</div>
                   <div className="text-lg font-mono font-bold text-white">{formatUsd(ex.paper_equity_usd)}</div>
+                  <div className="text-[10px] font-mono text-slate-500">
+                    Margin {formatUsd(ex.locked_margin_usd)} · Free {formatUsd(ex.available_margin_usd)}
+                  </div>
                 </div>
                 <div className="text-right">
-                  <div className="text-[11px] text-slate-400">24h Net PnL</div>
+                  <div className="text-[11px] text-slate-400">
+                    {ex.realized_pnl_24h !== null ? '24h Realized + Open' : 'Open Unrealized'}
+                  </div>
                   <div
                     className={`text-sm font-mono font-semibold ${
-                      ex.realized_pnl_24h + ex.unrealized_pnl >= 0 ? 'text-[#10B981]' : 'text-[#EF4444]'
+                      exNetPositive ? 'text-[#10B981]' : 'text-[#EF4444]'
                     }`}
                   >
-                    {formatSignedUsd(ex.realized_pnl_24h + ex.unrealized_pnl)}
+                    {exNetDisplay}
+                  </div>
+                  <div className="text-[10px] font-mono text-slate-500">
+                    {exRealizedFmt.caption}: {exRealizedFmt.text}
                   </div>
                 </div>
               </div>
@@ -184,7 +226,12 @@ export const GlobalOverviewView: React.FC<GlobalOverviewViewProps> = ({
           </div>
 
           <div className="divide-y divide-white/[0.06] mt-1">
-            {openFutures.map((pos) => (
+            {openFutures.length === 0 ? (
+              <div className="py-6 text-center text-xs text-slate-400">
+                No open paper futures positions across Binance, Bybit, or OKX.
+              </div>
+            ) : (
+              openFutures.map((pos) => (
               <button
                 key={pos.id}
                 onClick={() => onInspectPosition(pos)}
@@ -213,7 +260,8 @@ export const GlobalOverviewView: React.FC<GlobalOverviewViewProps> = ({
                   </div>
                 </div>
               </button>
-            ))}
+              ))
+            )}
           </div>
         </div>
 
@@ -233,7 +281,12 @@ export const GlobalOverviewView: React.FC<GlobalOverviewViewProps> = ({
           </div>
 
           <div className="divide-y divide-white/[0.06] mt-1">
-            {approvedOpportunities.map((opp) => (
+            {approvedOpportunities.length === 0 ? (
+              <div className="py-6 text-center text-xs text-slate-400">
+                No APPROVED setups in the current scanner cycle. Inspect Screening for watchlist candidates.
+              </div>
+            ) : (
+              approvedOpportunities.map((opp) => (
               <div key={opp.id} className="py-3 flex items-center justify-between gap-3 px-1">
                 <div>
                   <div className="flex items-center gap-2 text-xs font-mono">
@@ -258,7 +311,8 @@ export const GlobalOverviewView: React.FC<GlobalOverviewViewProps> = ({
                   Load Chart
                 </button>
               </div>
-            ))}
+              ))
+            )}
           </div>
         </div>
       </div>

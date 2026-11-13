@@ -230,6 +230,10 @@ class TradingEngineService:
             mid_low_cap_summary = await self.mid_low_cap_runner.run_cycle()
         if self.treasury is not None:
             self.sync_paper_fill_fees_to_treasury()
+        total_eq = self.paper_engine.total_portfolio_equity(self.scanner.latest_snapshots)
+        accounts = self.db.list_accounts()
+        initial_eq = sum(float(a.get("initial_equity_usd") or 0.0) for a in accounts)
+        self.risk.update_equity_watermarks(total_eq, initial_equity_usd=initial_eq if initial_eq > 0 else None)
         self.cycle_count += 1
         self.last_cycle_at = datetime.now(timezone.utc)
         try:

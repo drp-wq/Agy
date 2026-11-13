@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import time
 import json
+import math
 from pathlib import Path
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from app.core.models import (
@@ -90,6 +91,233 @@ def _exchange_auth_note(ex_id: str, auth_info: dict[str, Any], configured: bool)
     return "Read-only auth pending verification"
 
 
+def _build_strategy_label(bot_id: str) -> str:
+    return bot_id.replace("_", " ").strip() or "Unassigned Bot"
+
+
+def _compute_realized_and_analytics(
+    now_ts: int,
+    initial_eq: float,
+    total_eq: float,
+    ex_realized: dict[str, float],
+    ex_unrealized_map: dict[str, float],
+    all_fills_count: int,
+    closures: list[dict[str, Any]],
+    all_fills: list[Any],
+    funding_events: list[dict[str, Any]],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Compute provenance-verified daily/lifetime realized PnL, HWM trajectory, and portfolio analytics."""
+    utc_midnight_dt = datetime.fromtimestamp(now_ts, tz=timezone.utc).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
+    utc_day_start_ts = int(utc_midnight_dt.timestamp())
+    rolling_24h_start_ts = now_ts - 86400
+
+    # Events that directly moved paper_accounts.realized_pnl_usd:
+    # 1) Closure gross realized PnL
+    # 2) Fill fees (-fee_usd for every entry/exit fill)
+    # 3) Treasury-attributed funding settlements (+usd_value)
+    events: list[tuple[int, str, float]] = []
+    ex_recorded_total: dict[str, float] = {ex.value: 0.0 for ex in ExchangeId}
+    ex_utc_day_pnl: dict[str, float] = {ex.value: 0.0 for ex in ExchangeId}
+    ex_24h_pnl: dict[str, float] = {ex.value: 0.0 for ex in ExchangeId}
+
+    close_pnls: list[float] = []
+    strategy_stats: dict[str, dict[str, Any]] = {}
+
+    for row in closures:
+        ex_id = str(row.get("exchange") or "")
+        gross = float(row.get("gross_realized_usd") or 0.0)
+        exit_fee = float(row.get("exit_fee_usd") or 0.0)
+        net_close = gross - exit_fee
+        close_pnls.append(net_close)
+
+        bot_id = str(row.get("bot_id") or "unassigned")
+        s_bucket = strategy_stats.setdefault(
+            bot_id, {"strategy": _build_strategy_label(bot_id), "trades": 0, "wins": 0, "net_pnl_usd": 0.0}
+        )
+        s_bucket["trades"] += 1
+        if net_close > 0:
+            s_bucket["wins"] += 1
+        s_bucket["net_pnl_usd"] += net_close
+
+        ts = _iso_to_unix(row.get("created_at"), default=now_ts)
+        events.append((ts, ex_id, gross))
+        if ex_id in ex_recorded_total:
+            ex_recorded_total[ex_id] += gross
+            if ts >= utc_day_start_ts:
+                ex_utc_day_pnl[ex_id] += gross
+            if ts >= rolling_24h_start_ts:
+                ex_24h_pnl[ex_id] += gross
+
+    for fill in all_fills:
+        ex_id = fill.exchange.value if hasattr(fill.exchange, "value") else str(fill.exchange)
+        fee = -float(getattr(fill, "fee_usd", 0.0) or 0.0)
+        ts = _iso_to_unix(getattr(fill, "timestamp", None), default=now_ts)
+        events.append((ts, ex_id, fee))
+        if ex_id in ex_recorded_total:
+            ex_recorded_total[ex_id] += fee
+            if ts >= utc_day_start_ts:
+                ex_utc_day_pnl[ex_id] += fee
+            if ts >= rolling_24h_start_ts:
+                ex_24h_pnl[ex_id] += fee
+
+    for fev in funding_events:
+        ex_id = str(fev.get("exchange") or "")
+        val = float(fev.get("usd_value") or fev.get("amount") or 0.0)
+        ts = _iso_to_unix(fev.get("created_at"), default=now_ts)
+        events.append((ts, ex_id, val))
+        if ex_id in ex_recorded_total:
+            ex_recorded_total[ex_id] += val
+            if ts >= utc_day_start_ts:
+                ex_utc_day_pnl[ex_id] += val
+            if ts >= rolling_24h_start_ts:
+                ex_24h_pnl[ex_id] += val
+
+    ex_reconciled: dict[str, bool] = {}
+    for ex_id in ex_realized:
+        ex_reconciled[ex_id] = abs(ex_realized[ex_id] - ex_recorded_total.get(ex_id, 0.0)) <= 0.05
+
+    lifetime_total = sum(ex_realized.values())
+    recorded_total = sum(ex_recorded_total.values())
+    total_reconciled = abs(lifetime_total - recorded_total) <= 0.05
+    daily_utc_total = sum(ex_utc_day_pnl.values())
+
+    # Build chronological strictly ascending equity curve from initial_eq + realized events -> current total_eq
+    events.sort(key=lambda item: item[0])
+    curve_map: dict[int, float] = {}
+    first_ts = events[0][0] if events else (now_ts - 3600)
+    start_ts = min(first_ts - 60, now_ts - 60)
+    running_eq = initial_eq
+    curve_map[start_ts] = round(running_eq, 2)
+
+    for ts, _ex_id, delta in events:
+        running_eq += delta
+        clamped_ts = min(ts, now_ts)
+        curve_map[clamped_ts] = round(running_eq, 2)
+
+    curve_map[now_ts] = round(total_eq, 2)
+    full_curve = [{"time": t, "equity": curve_map[t]} for t in sorted(curve_map.keys())]
+
+    # True historical drawdown from trajectory (excluding policy limit)
+    max_hist_dd: float | None = None
+    if total_reconciled and initial_eq > 0 and full_curve:
+        peak_val = full_curve[0]["equity"]
+        max_dd_acc = 0.0
+        for pt in full_curve:
+            eq_val = pt["equity"]
+            if eq_val > peak_val:
+                peak_val = eq_val
+            if peak_val > 0 and eq_val < peak_val:
+                dd_pct = ((peak_val - eq_val) / peak_val) * 100.0
+                if dd_pct > max_dd_acc:
+                    max_dd_acc = dd_pct
+        max_hist_dd = round(max_dd_acc, 2)
+
+    # Downsample chart curve to <= 120 points while preserving endpoints & extrema
+    equity_curve = full_curve
+    if len(full_curve) > 120:
+        step = max(1, len(full_curve) // 100)
+        sampled = full_curve[::step]
+        if sampled[-1]["time"] != full_curve[-1]["time"]:
+            sampled.append(full_curve[-1])
+        equity_curve = sampled
+
+    # Closed-trade win/loss metrics (strictly from recorded closures; null when zero closed trades)
+    wins = [p for p in close_pnls if p > 0]
+    losses = [p for p in close_pnls if p < 0]
+    closed_count = len(close_pnls)
+    win_rate_pct: float | None = round((len(wins) / closed_count) * 100.0, 1) if closed_count > 0 else None
+    avg_win_usd: float | None = round(sum(wins) / len(wins), 2) if wins else (0.0 if closed_count > 0 else None)
+    avg_loss_usd: float | None = round(sum(losses) / len(losses), 2) if losses else (0.0 if closed_count > 0 else None)
+    gross_wins = sum(wins)
+    gross_losses_abs = abs(sum(losses))
+    if closed_count == 0:
+        profit_factor: float | None = None
+    elif gross_losses_abs > 0:
+        profit_factor = round(gross_wins / gross_losses_abs, 2)
+    elif gross_wins > 0:
+        profit_factor = None
+    else:
+        profit_factor = 0.0
+
+    # Daily return Sharpe / Sortino only when >= 4 distinct UTC days exist
+    daily_end_equity: dict[str, float] = {}
+    for pt in full_curve:
+        day_key = datetime.fromtimestamp(pt["time"], tz=timezone.utc).strftime("%Y-%m-%d")
+        daily_end_equity[day_key] = pt["equity"]
+    ordered_days = sorted(daily_end_equity.keys())
+    sharpe_ratio: float | None = None
+    sortino_ratio: float | None = None
+    if len(ordered_days) >= 4:
+        rets: list[float] = []
+        for idx in range(1, len(ordered_days)):
+            prev_eq = daily_end_equity[ordered_days[idx - 1]]
+            curr_eq = daily_end_equity[ordered_days[idx]]
+            if prev_eq > 0:
+                rets.append((curr_eq - prev_eq) / prev_eq)
+        if len(rets) >= 3:
+            mean_r = sum(rets) / len(rets)
+            var_r = sum((r - mean_r) ** 2 for r in rets) / max(1, len(rets) - 1)
+            std_r = math.sqrt(var_r)
+            downside = [min(0.0, r) ** 2 for r in rets]
+            downside_dev = math.sqrt(sum(downside) / len(rets))
+            if std_r > 1e-9:
+                sharpe_ratio = round((mean_r / std_r) * math.sqrt(365.0), 2)
+            if downside_dev > 1e-9:
+                sortino_ratio = round((mean_r / downside_dev) * math.sqrt(365.0), 2)
+
+    pnl_by_exchange = {
+        ex_id: round(ex_realized[ex_id] + ex_unrealized_map.get(ex_id, 0.0), 2)
+        for ex_id in ex_realized
+    }
+    pnl_by_strategy = sorted(
+        [
+            {
+                "strategy": item["strategy"],
+                "trades": item["trades"],
+                "win_rate": round((item["wins"] / item["trades"]) * 100.0, 1) if item["trades"] > 0 else 0.0,
+                "net_pnl_usd": round(item["net_pnl_usd"], 2),
+            }
+            for item in strategy_stats.values()
+        ],
+        key=lambda x: x["net_pnl_usd"],
+        reverse=True,
+    )
+
+    realized_meta = {
+        "total_reconciled": total_reconciled,
+        "daily_realized_available": total_reconciled,
+        "daily_realized_pnl_usd": round(daily_utc_total, 2) if total_reconciled else None,
+        "lifetime_realized_pnl_usd": round(lifetime_total, 2),
+        "daily_realized_cutoff_ts": utc_day_start_ts,
+        "daily_realized_scope": "utc_day" if total_reconciled else "unavailable_unbacked_legacy",
+        "ex_reconciled": ex_reconciled,
+        "ex_utc_day_pnl": {k: round(v, 2) for k, v in ex_utc_day_pnl.items()},
+        "ex_24h_pnl": {k: round(v, 2) for k, v in ex_24h_pnl.items()},
+    }
+    analytics_payload = {
+        "equity_curve": equity_curve,
+        "win_rate_pct": win_rate_pct,
+        "profit_factor": profit_factor,
+        "sharpe_ratio": sharpe_ratio,
+        "sortino_ratio": sortino_ratio,
+        "total_trades": all_fills_count,
+        "closed_trades": closed_count,
+        "max_historical_drawdown_pct": max_hist_dd,
+        "avg_win_usd": avg_win_usd,
+        "avg_loss_usd": avg_loss_usd,
+        "pnl_by_exchange": pnl_by_exchange,
+        "pnl_by_strategy": pnl_by_strategy,
+        "metrics_note": (
+            None
+            if sharpe_ratio is not None
+            else f"Sharpe/Sortino require >=4 UTC daily closes ({len(ordered_days)} day(s) recorded)"
+        ),
+    }
+    return realized_meta, analytics_payload
+
+
 def build_miniapp_health_payload(
     service: TradingEngineService,
     auth_user: str,
@@ -158,6 +386,9 @@ def build_miniapp_state_payload(
     accounts = service.db.list_accounts()
     orders: list[PaperOrder] = service.db.list_orders(limit=100)
     fills = service.db.list_fills(limit=100)
+    all_fills = service.db.list_all_fills_asc()
+    closures = service.db.list_realized_closures()
+    funding_events = service.db.list_treasury_funding_events()
     snapshots = service.scanner.latest_snapshots
     signals: list[StrategySignal] = list(service.orchestrator.latest_signals)
 
@@ -168,17 +399,42 @@ def build_miniapp_state_payload(
 
     ex_cash: dict[str, float] = {ex.value: 0.0 for ex in ExchangeId}
     ex_realized: dict[str, float] = {ex.value: 0.0 for ex in ExchangeId}
+    ex_reserved_margin: dict[str, float] = {ex.value: 0.0 for ex in ExchangeId}
     for acc in accounts:
-        ex_id = bot_exchange.get(acc["bot_id"])
+        ex_id = bot_exchange.get(acc["bot_id"]) or str(acc.get("exchange") or "")
         if ex_id in ex_cash:
             ex_cash[ex_id] += float(acc.get("cash_usd") or 0.0)
             ex_realized[ex_id] += float(acc.get("realized_pnl_usd") or 0.0)
+            ex_reserved_margin[ex_id] += float(acc.get("reserved_margin_usd") or 0.0)
+
+    ex_unrealized_map: dict[str, float] = {ex.value: 0.0 for ex in ExchangeId}
+    ex_notional_map: dict[str, float] = {ex.value: 0.0 for ex in ExchangeId}
+    for p in positions:
+        ex_id = p.exchange.value
+        ex_unrealized_map[ex_id] = ex_unrealized_map.get(ex_id, 0.0) + float(p.unrealized_pnl_usd or 0.0)
+        ex_notional_map[ex_id] = ex_notional_map.get(ex_id, 0.0) + abs(float(p.qty) * float(p.mark_price))
+
+    portfolio = raw_snap.get("portfolio", {})
+    total_eq = float(portfolio.get("total_equity_usd") or 0.0)
+    initial_eq = float(portfolio.get("initial_equity_usd") or total_eq or 10000.0)
+    realized_meta, analytics_payload = _compute_realized_and_analytics(
+        now_ts=now_ts,
+        initial_eq=initial_eq,
+        total_eq=total_eq,
+        ex_realized=ex_realized,
+        ex_unrealized_map=ex_unrealized_map,
+        all_fills_count=len(all_fills),
+        closures=closures,
+        all_fills=all_fills,
+        funding_events=funding_events,
+    )
 
     # Build exchanges map
     exchanges_map: dict[str, Any] = {}
     health_by_ex = {h["exchange"]: h for h in raw_snap.get("exchanges", [])}
     auth_ver = raw_snap.get("auth_verification") or {}
     account_snapshots = raw_snap.get("readonly_account_snapshots") or {}
+    authenticated_exchanges: list[str] = []
 
     for ex in ExchangeId:
         ex_id = ex.value
@@ -187,20 +443,26 @@ def build_miniapp_state_payload(
         live_snapshot = account_snapshots.get(ex_id, {})
         configured = bool(h.get("credentials_configured", False))
         private_ok = ex_auth.get("status") == "ok"
+        if private_ok:
+            authenticated_exchanges.append(ex_id)
         last_sync = _iso_to_unix(h.get("last_ok_at"), default=0)
 
         ex_positions = [p for p in positions if p.exchange.value == ex_id]
-        ex_unrealized = sum(p.unrealized_pnl_usd for p in ex_positions)
-        ex_locked_margin = sum(
-            abs(p.qty * p.mark_price) / max(p.leverage, 1.0) for p in ex_positions
-        )
-        ex_paper_equity = round(ex_cash[ex_id] + ex_unrealized + sum(
-            abs(p.qty * p.entry_price) / max(p.leverage, 1.0) for p in ex_positions
-        ), 2)
+        ex_unrealized = ex_unrealized_map.get(ex_id, 0.0)
+        ex_reserved = ex_reserved_margin.get(ex_id, 0.0)
+        # Fallback only if DB reserved_margin_usd is empty while positions exist
+        if ex_reserved <= 0.0 and ex_positions:
+            ex_reserved = sum(
+                abs(p.qty * p.entry_price) / max(p.leverage, 1.0) for p in ex_positions
+            )
+        # paper_accounts.cash_usd already includes reserved margin (entry only deducts fees)
+        ex_paper_equity = round(ex_cash[ex_id] + ex_unrealized, 2)
+        ex_available_margin = round(max(0.0, ex_cash[ex_id] - ex_reserved), 2)
 
         ex_pairs = sorted({
             s.symbol for s in snapshots.values() if s.exchange.value == ex_id
         })
+        ex_rec_ok = bool(realized_meta["ex_reconciled"].get(ex_id, False))
 
         exchanges_map[ex_id] = {
             "exchange": ex_id,
@@ -213,9 +475,13 @@ def build_miniapp_state_payload(
             "paper_equity_usd": ex_paper_equity,
             "live_readonly_equity_usd": None,  # Cannot value mixed assets without verified USD quotes.
             "live_readonly_snapshot": live_snapshot,
-            "available_margin_usd": round(max(0.0, ex_cash[ex_id]), 2),
-            "locked_margin_usd": round(ex_locked_margin, 2),
-            "realized_pnl_24h": round(ex_realized[ex_id], 2),
+            "available_margin_usd": ex_available_margin,
+            "locked_margin_usd": round(ex_reserved, 2),
+            "notional_exposure_usd": round(ex_notional_map.get(ex_id, 0.0), 2),
+            "realized_pnl_24h": realized_meta["ex_24h_pnl"][ex_id] if ex_rec_ok else None,
+            "realized_pnl_24h_available": ex_rec_ok,
+            "realized_pnl_utc_day": realized_meta["ex_utc_day_pnl"][ex_id] if ex_rec_ok else None,
+            "lifetime_realized_pnl": round(ex_realized[ex_id], 2),
             "unrealized_pnl": round(ex_unrealized, 2),
             "exchange_meta": {
                 "account_type": EXCHANGE_ACCOUNT_TYPES.get(ex_id, "Paper Engine"),
@@ -300,6 +566,59 @@ def build_miniapp_state_payload(
                 "opened_at": _iso_to_unix(pos.opened_at, default=now_ts),
                 "closed_at": None,
             })
+
+    orders_by_id: dict[str, PaperOrder] = {o.order_id: o for o in orders}
+    for row in reversed(closures):
+        if len([fp for fp in futures_positions if fp["status"] == "closed"]) >= 25:
+            break
+        if str(row.get("market_type") or "") != MarketType.PERP.value:
+            continue
+        oid = str(row.get("order_id") or "")
+        exit_ord = orders_by_id.get(oid)
+        close_qty = float(row.get("close_qty") or 0.0)
+        entry_px = float(row.get("entry_price") or 0.0)
+        exit_px = float(row.get("exit_price") or 0.0)
+        gross_pnl = float(row.get("gross_realized_usd") or 0.0)
+        exit_fee = float(row.get("exit_fee_usd") or 0.0)
+        net_pnl = round(gross_pnl - exit_fee, 2)
+        leverage = float(exit_ord.leverage) if exit_ord else 1.0
+        if exit_ord is not None:
+            pos_side = "LONG" if exit_ord.side.value == "sell" else "SHORT"
+        elif exit_px != entry_px and close_qty > 0:
+            pos_side = "LONG" if (exit_px - entry_px) * gross_pnl >= 0 else "SHORT"
+        else:
+            pos_side = "LONG"
+        notional_c = round(abs(close_qty * exit_px), 2)
+        margin_c = round((abs(close_qty * entry_px)) / max(leverage, 1.0), 2)
+        closed_ts = _iso_to_unix(row.get("created_at"), default=now_ts)
+        futures_positions.append({
+            "id": f"closed_{oid}",
+            "exchange": str(row.get("exchange") or "binance"),
+            "account_mode": "paper",
+            "market_type": "futures",
+            "status": "closed",
+            "symbol": str(row.get("symbol") or ""),
+            "instrument_id": f"{str(row.get('symbol') or '').replace('/', '-')}-PERP",
+            "side": pos_side,
+            "quantity": close_qty,
+            "entry_price": entry_px,
+            "mark_price": exit_px,
+            "notional_usd": notional_c,
+            "margin_usd": margin_c,
+            "leverage": leverage,
+            "margin_mode": "ISOLATED",
+            "liquidation_price": None,
+            "liquidation_distance_pct": None,
+            "unrealized_pnl_usd": 0.0,
+            "unrealized_pnl_pct": round((net_pnl / margin_c) * 100.0, 2) if margin_c > 0 else 0.0,
+            "realized_pnl_usd": net_pnl,
+            "stop_loss": exit_ord.stop_loss if exit_ord else None,
+            "take_profit": exit_ord.take_profit if exit_ord else None,
+            "sl_tp_status": "NONE",
+            "strategy_name": str(row.get("bot_id") or ""),
+            "opened_at": _iso_to_unix(exit_ord.created_at, default=closed_ts) if exit_ord else closed_ts,
+            "closed_at": closed_ts,
+        })
 
     # Orders
     mapped_orders: list[dict[str, Any]] = []
@@ -404,15 +723,24 @@ def build_miniapp_state_payload(
             "executable_note": "Observed quote dispersion only (est. ~20 bps round-trip taker fee)",
         })
 
-    # Risk
-    portfolio = raw_snap.get("portfolio", {})
-    total_eq = float(portfolio.get("total_equity_usd") or 0.0)
+    # Risk & Capital Allocation Telemetry
     risk_raw = raw_snap.get("risk", {})
-    peak_eq = float(risk_raw.get("peak_equity_usd") or total_eq)
-    drawdown_pct = round(((peak_eq - total_eq) / peak_eq) * 100.0, 2) if peak_eq > 0 and total_eq < peak_eq else 0.0
+    raw_peak_eq = float(risk_raw.get("peak_equity_usd") or 0.0)
+    drawdown_available = raw_peak_eq > 0.0
+    drawdown_pct: float | None = (
+        round(max(0.0, ((raw_peak_eq - total_eq) / raw_peak_eq) * 100.0), 2)
+        if drawdown_available
+        else None
+    )
+    hwm_equity_usd: float | None = round(raw_peak_eq, 2) if drawdown_available else None
+
     total_unrealized = sum(p.unrealized_pnl_usd for p in positions)
-    total_realized = sum(ex_realized.values())
-    gross_exposure = float(risk_raw.get("portfolio_exposure_usd") or 0.0)
+    gross_notional_exposure = sum(abs(p.qty * p.mark_price) for p in positions)
+    total_reserved_margin = sum(float(exchanges_map[ex.value]["locked_margin_usd"]) for ex in ExchangeId)
+    total_cash = sum(ex_cash.values())
+    free_paper_capital = max(0.0, total_cash - total_reserved_margin)
+    margin_allocation_pct = round((total_reserved_margin / total_eq) * 100.0, 2) if total_eq > 0 else 0.0
+    notional_exposure_pct = round((gross_notional_exposure / total_eq) * 100.0, 2) if total_eq > 0 else 0.0
     net_delta = sum(
         (p.qty * p.mark_price) if p.direction == Direction.LONG else -(p.qty * p.mark_price)
         for p in positions
@@ -426,7 +754,7 @@ def build_miniapp_state_payload(
         {
             "asset": asset,
             "exposure_usd": round(exp, 2),
-            "share_pct": round((exp / gross_exposure) * 100.0, 1) if gross_exposure > 0 else 0.0,
+            "share_pct": round((exp / gross_notional_exposure) * 100.0, 1) if gross_notional_exposure > 0 else 0.0,
         }
         for asset, exp in sorted(asset_exp.items(), key=lambda x: x[1], reverse=True)
     ]
@@ -451,37 +779,40 @@ def build_miniapp_state_payload(
     risk_payload = {
         "total_paper_equity_usd": round(total_eq, 2),
         "total_live_readonly_equity_usd": None,
-        "daily_realized_pnl_usd": round(total_realized, 2),
+        "live_readonly_auth_summary": {
+            "authenticated_exchanges": authenticated_exchanges,
+            "total_exchanges": len(ExchangeId),
+            "usd_valuation_available": False,
+            "reason": "Spot and cross-margin exchange balances require verified USD conversion quotes before aggregate summation.",
+        },
+        "daily_realized_pnl_usd": realized_meta["daily_realized_pnl_usd"],
+        "daily_realized_available": realized_meta["daily_realized_available"],
+        "daily_realized_cutoff_ts": realized_meta["daily_realized_cutoff_ts"],
+        "daily_realized_scope": realized_meta["daily_realized_scope"],
+        "lifetime_realized_pnl_usd": realized_meta["lifetime_realized_pnl_usd"],
         "daily_unrealized_pnl_usd": round(total_unrealized, 2),
         "current_drawdown_pct": drawdown_pct,
-        "max_drawdown_pct": round(service.risk.policy.max_drawdown_pct * 100.0, 2),
+        "drawdown_available": drawdown_available,
+        "hwm_equity_usd": hwm_equity_usd,
+        "max_drawdown_pct": (
+            analytics_payload["max_historical_drawdown_pct"]
+            if analytics_payload["max_historical_drawdown_pct"] is not None
+            else drawdown_pct
+        ),
         "drawdown_limit_pct": round(service.risk.policy.max_drawdown_pct * 100.0, 2),
-        "risk_allocation_pct": round(float(risk_raw.get("portfolio_exposure_pct") or 0.0) * 100.0, 2),
-        "gross_margin_exposure_usd": round(gross_exposure, 2),
+        "risk_allocation_pct": margin_allocation_pct,
+        "margin_allocation_pct": margin_allocation_pct,
+        "notional_exposure_pct": notional_exposure_pct,
+        "reserved_margin_usd": round(total_reserved_margin, 2),
+        "free_paper_capital_usd": round(free_paper_capital, 2),
+        "gross_notional_exposure_usd": round(gross_notional_exposure, 2),
+        "gross_margin_exposure_usd": round(total_reserved_margin, 2),
         "net_delta_exposure_usd": round(net_delta, 2),
         "circuit_breaker_state": cb_state,
         "emergency_stop_active": bool(risk_raw.get("emergency_stop_active", False)),
         "concentration_by_asset": concentration,
         "stale_data_warnings": stale_warnings,
         "reconciliation_errors": [],
-    }
-
-    # Portfolio analytics from real fills/accounts
-    pnl_by_exchange = {ex.value: round(ex_realized[ex.value] + exchanges_map[ex.value]["unrealized_pnl"], 2) for ex in ExchangeId}
-    initial_eq = float(portfolio.get("initial_equity_usd") or total_eq or 10000.0)
-    equity_curve = [{"time": now_ts - 3600, "equity": round(initial_eq, 2)}, {"time": now_ts, "equity": round(total_eq, 2)}]
-
-    analytics_payload = {
-        "equity_curve": equity_curve,
-        "win_rate_pct": 0.0,
-        "profit_factor": 0.0,
-        "sharpe_ratio": 0.0,
-        "sortino_ratio": 0.0,
-        "total_trades": len(fills),
-        "avg_win_usd": 0.0,
-        "avg_loss_usd": 0.0,
-        "pnl_by_exchange": pnl_by_exchange,
-        "pnl_by_strategy": [],
     }
 
     # Telegram + Risk Alerts

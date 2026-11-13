@@ -105,8 +105,20 @@ export const SystemHealthView: React.FC<SystemHealthViewProps> = ({
                   <tr key={exId} className="hover:bg-white/[0.02]">
                     <td className={`py-3 px-4 font-semibold ${meta.accentText}`}>{meta.name}</td>
                     <td className="py-3 px-3">
-                      <span className={adapter?.public_ws_ok ? 'text-[#10B981]' : 'text-[#EF4444]'}>
-                        {adapter?.public_ws_ok ? 'Connected' : 'Offline'}
+                      <span
+                        className={
+                          adapter?.public_ws_ok
+                            ? 'text-[#10B981]'
+                            : adapter?.public_rest_ok
+                              ? 'text-amber-300'
+                              : 'text-[#EF4444]'
+                        }
+                      >
+                        {adapter?.public_ws_ok
+                          ? 'Connected'
+                          : adapter?.public_rest_ok
+                            ? 'REST Polling'
+                            : 'Offline'}
                       </span>
                     </td>
                     <td className="py-3 px-3">

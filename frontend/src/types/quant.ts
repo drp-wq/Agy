@@ -145,7 +145,11 @@ export interface ExchangeAccountStatus {
   };
   available_margin_usd: number;
   locked_margin_usd: number;
-  realized_pnl_24h: number;
+  notional_exposure_usd?: number;
+  realized_pnl_24h: number | null;
+  realized_pnl_24h_available?: boolean;
+  realized_pnl_utc_day?: number | null;
+  lifetime_realized_pnl?: number;
   unrealized_pnl: number;
   exchange_meta: {
     account_type: string;
@@ -206,12 +210,29 @@ export interface CrossExchangeSpread {
 export interface RiskCommandState {
   total_paper_equity_usd: number;
   total_live_readonly_equity_usd: number | null;
-  daily_realized_pnl_usd: number;
+  live_readonly_auth_summary?: {
+    authenticated_exchanges: ExchangeId[];
+    total_exchanges: number;
+    usd_valuation_available: boolean;
+    reason?: string;
+  };
+  daily_realized_pnl_usd: number | null;
+  daily_realized_available?: boolean;
+  daily_realized_cutoff_ts?: number;
+  daily_realized_scope?: 'utc_day' | 'unavailable_unbacked_legacy' | string;
+  lifetime_realized_pnl_usd?: number;
   daily_unrealized_pnl_usd: number;
-  current_drawdown_pct: number;
-  max_drawdown_pct: number;
+  current_drawdown_pct: number | null;
+  drawdown_available?: boolean;
+  hwm_equity_usd?: number | null;
+  max_drawdown_pct: number | null;
   drawdown_limit_pct: number;
   risk_allocation_pct: number;
+  margin_allocation_pct?: number;
+  notional_exposure_pct?: number;
+  reserved_margin_usd?: number;
+  free_paper_capital_usd?: number;
+  gross_notional_exposure_usd?: number;
   gross_margin_exposure_usd: number;
   net_delta_exposure_usd: number;
   circuit_breaker_state: 'ARMED_NOMINAL' | 'TRIPPED_VOLATILITY' | 'COOLDOWN';
@@ -223,7 +244,7 @@ export interface RiskCommandState {
   }>;
   stale_data_warnings: Array<{
     component: string;
-    age_sec: number;
+    age_sec: number | null;
     message: string;
   }>;
   reconciliation_errors: Array<{
@@ -242,15 +263,18 @@ export interface EquityPoint {
 
 export interface PortfolioAnalyticsData {
   equity_curve: EquityPoint[];
-  win_rate_pct: number;
-  profit_factor: number;
-  sharpe_ratio: number;
-  sortino_ratio: number;
+  win_rate_pct: number | null;
+  profit_factor: number | null;
+  sharpe_ratio: number | null;
+  sortino_ratio: number | null;
   total_trades: number;
-  avg_win_usd: number;
-  avg_loss_usd: number;
+  closed_trades?: number;
+  max_historical_drawdown_pct?: number | null;
+  avg_win_usd: number | null;
+  avg_loss_usd: number | null;
   pnl_by_exchange: Record<ExchangeId, number>;
   pnl_by_strategy: Array<{ strategy: string; trades: number; win_rate: number; net_pnl_usd: number }>;
+  metrics_note?: string | null;
 }
 
 export interface TelegramAlertItem {

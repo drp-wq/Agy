@@ -3,6 +3,11 @@ import { ShieldAlert, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { ExchangeId, MiniAppHealthResponse, MiniAppStateResponse } from '../../types/quant';
 import { EXCHANGE_META, SectionHeader } from '../common/TerminalPrimitives';
 import { formatAgeSeconds, formatSignedUsd, formatUsd } from '../../utils/formatters';
+import {
+  summarizeDrawdown,
+  summarizeExposureAndAllocation,
+  summarizeRealizedUnrealized
+} from '../../utils/telemetryMetrics';
 
 interface RiskCommandViewProps {
   state: MiniAppStateResponse;
@@ -11,6 +16,9 @@ interface RiskCommandViewProps {
 
 export const RiskCommandView: React.FC<RiskCommandViewProps> = ({ state, health }) => {
   const { risk } = state;
+  const pnlSummary = summarizeRealizedUnrealized(risk);
+  const ddSummary = summarizeDrawdown(risk);
+  const exposureSummary = summarizeExposureAndAllocation(risk);
 
   return (
     <div className="space-y-6">
@@ -32,50 +40,58 @@ export const RiskCommandView: React.FC<RiskCommandViewProps> = ({ state, health 
       />
 
       {/* Core Risk Gauges */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="nq-panel rounded-xl p-4">
-          <div className="text-xs text-slate-400">Daily Realized / Unrealized</div>
+          <div className="text-xs text-slate-400">{pnlSummary.title}</div>
           <div
             className={`text-xl font-mono font-bold mt-1 ${
-              risk.daily_realized_pnl_usd + risk.daily_unrealized_pnl_usd >= 0 ? 'text-[#10B981]' : 'text-[#EF4444]'
+              pnlSummary.primaryUsd >= 0 ? 'text-[#10B981]' : 'text-[#EF4444]'
             }`}
           >
-            {formatSignedUsd(risk.daily_realized_pnl_usd + risk.daily_unrealized_pnl_usd)}
+            {formatSignedUsd(pnlSummary.primaryUsd)}
           </div>
           <div className="text-[11px] font-mono text-slate-400 mt-1">
-            Realized {formatSignedUsd(risk.daily_realized_pnl_usd)}
+            {pnlSummary.realizedLabel}:{' '}
+            {pnlSummary.realizedUsd !== null ? formatSignedUsd(pnlSummary.realizedUsd) : 'Unavailable'} · Open{' '}
+            {formatSignedUsd(pnlSummary.unrealizedUsd)}
           </div>
         </div>
 
         <div className="nq-panel rounded-xl p-4">
           <div className="text-xs text-slate-400">Drawdown vs Limit</div>
-          <div className="text-xl font-mono font-bold text-white mt-1">
-            -{risk.current_drawdown_pct.toFixed(2)}% / -{risk.drawdown_limit_pct.toFixed(1)}%
+          <div className={`text-xl font-mono font-bold mt-1 ${ddSummary.available ? 'text-white' : 'text-amber-300'}`}>
+            {ddSummary.displayValue} / -{ddSummary.limitPct.toFixed(1)}%
           </div>
           <div className="w-full h-1.5 bg-white/10 rounded-full mt-2 overflow-hidden">
             <div
               className="h-full bg-[#00E5FF] rounded-full"
-              style={{ width: `${Math.min(100, (risk.current_drawdown_pct / risk.drawdown_limit_pct) * 100)}%` }}
+              style={{
+                width: `${ddSummary.available && ddSummary.currentPct !== null && ddSummary.limitPct > 0 ? Math.min(100, (ddSummary.currentPct / ddSummary.limitPct) * 100) : 0}%`
+              }}
             />
           </div>
+          <div className="text-[10px] font-mono text-slate-500 mt-1">{ddSummary.subtitle}</div>
         </div>
 
         <div className="nq-panel rounded-xl p-4">
-          <div className="text-xs text-slate-400">Gross Margin / Net Delta</div>
+          <div className="text-xs text-slate-400">Notional / Net Delta</div>
           <div className="text-xl font-mono font-bold text-[#00E5FF] mt-1">
-            {formatUsd(risk.gross_margin_exposure_usd)}
+            {formatUsd(exposureSummary.grossNotionalUsd)}
           </div>
           <div className="text-[11px] font-mono text-slate-400 mt-1">
-            Net Delta: {formatUsd(risk.net_delta_exposure_usd)}
+            Net Delta: {formatUsd(risk.net_delta_exposure_usd)} · Leverage Ratio{' '}
+            {exposureSummary.notionalExposurePct.toFixed(1)}%
           </div>
         </div>
 
         <div className="nq-panel rounded-xl p-4">
-          <div className="text-xs text-slate-400">Risk Capital Allocated</div>
+          <div className="text-xs text-slate-400">Margin Reserved & Allocation</div>
           <div className="text-xl font-mono font-bold text-white mt-1">
-            {risk.risk_allocation_pct.toFixed(2)}%
+            {formatUsd(exposureSummary.reservedMarginUsd)} ({exposureSummary.marginAllocationPct.toFixed(1)}%)
           </div>
-          <div className="text-[11px] font-mono text-slate-400 mt-1">Paper Equity Reserve Active</div>
+          <div className="text-[11px] font-mono text-slate-400 mt-1">
+            Free Paper Capital: {formatUsd(exposureSummary.freeCapitalUsd)}
+          </div>
         </div>
       </div>
 

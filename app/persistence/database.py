@@ -685,6 +685,39 @@ class PaperDatabase:
             ).fetchall()
             return [self._row_to_order(r) for r in rows]
 
+    def list_realized_closures(self, limit: int | None = None) -> list[dict[str, Any]]:
+        with self._lock:
+            sql = "SELECT * FROM paper_realized_closures ORDER BY created_at ASC, order_id ASC"
+            if limit is not None:
+                rows = self._conn.execute(f"{sql} LIMIT ?", (limit,)).fetchall()
+            else:
+                rows = self._conn.execute(sql).fetchall()
+            return [dict(r) for r in rows]
+
+    def list_all_fills_asc(self) -> list[PaperFill]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM paper_fills ORDER BY timestamp ASC, fill_id ASC"
+            ).fetchall()
+            return [self._row_to_fill(r) for r in rows]
+
+    def list_treasury_funding_events(self) -> list[dict[str, Any]]:
+        with self._lock:
+            table_row = self._conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='treasury_attribution_events'"
+            ).fetchone()
+            if not table_row:
+                return []
+            rows = self._conn.execute(
+                """
+                SELECT exchange, amount, usd_value, created_at
+                FROM treasury_attribution_events
+                WHERE event_category = 'funding'
+                ORDER BY created_at ASC, attribution_id ASC
+                """
+            ).fetchall()
+            return [dict(r) for r in rows]
+
     def log_audit(
         self,
         event_type: str,

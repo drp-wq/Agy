@@ -100,14 +100,21 @@ class GlobalRiskGuardian:
         self._record_alert("INFO", "Emergency stop and circuit breaker reset")
         self._persist_state()
 
-    def update_equity_watermarks(self, current_equity_usd: float) -> None:
+    def update_equity_watermarks(
+        self,
+        current_equity_usd: float,
+        initial_equity_usd: float | None = None,
+    ) -> None:
         today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         changed = False
         if self.daily_start_equity_usd <= 0 or today != self.daily_date:
             self.daily_date = today
             self.daily_start_equity_usd = current_equity_usd
             changed = True
-        if current_equity_usd > self.peak_equity_usd:
+        if self.peak_equity_usd <= 0 and initial_equity_usd is not None and initial_equity_usd > 0:
+            self.peak_equity_usd = max(float(initial_equity_usd), float(current_equity_usd))
+            changed = True
+        elif current_equity_usd > self.peak_equity_usd:
             self.peak_equity_usd = current_equity_usd
             changed = True
         if changed:

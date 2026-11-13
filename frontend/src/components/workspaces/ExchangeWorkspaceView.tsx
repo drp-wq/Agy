@@ -17,6 +17,7 @@ import {
   formatTimeShort,
   formatUsd
 } from '../../utils/formatters';
+import { formatExchangeRealizedPnl } from '../../utils/telemetryMetrics';
 
 interface ExchangeWorkspaceViewProps {
   exchange: ExchangeId;
@@ -107,52 +108,65 @@ export const ExchangeWorkspaceView: React.FC<ExchangeWorkspaceViewProps> = ({
       </div>
 
       {/* Account Metrics Strip */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-        <div className="nq-panel rounded-xl p-4">
-          <div className="text-xs text-slate-400">Paper Equity</div>
-          <div className="text-xl font-mono font-bold text-white mt-1">{formatUsd(ex.paper_equity_usd)}</div>
-          <div className="text-[11px] font-mono text-slate-400 mt-1">
-            Live Read-Only: {ex.live_readonly_equity_usd !== null ? formatUsd(ex.live_readonly_equity_usd) : '—'}
-          </div>
-        </div>
+      {(() => {
+        const realizedFmt = formatExchangeRealizedPnl(ex.realized_pnl_24h, ex.lifetime_realized_pnl);
+        const marginPct =
+          exchange === 'bybit'
+            ? (ex.exchange_meta.im_rate_pct !== null && ex.exchange_meta.im_rate_pct !== undefined
+                ? `${ex.exchange_meta.im_rate_pct}% / ${ex.exchange_meta.mm_rate_pct ?? 0}%`
+                : null)
+            : (ex.exchange_meta.margin_ratio_pct !== null && ex.exchange_meta.margin_ratio_pct !== undefined
+                ? `${ex.exchange_meta.margin_ratio_pct}%`
+                : null);
+        return (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+            <div className="nq-panel rounded-xl p-4">
+              <div className="text-xs text-slate-400">Paper Equity</div>
+              <div className="text-xl font-mono font-bold text-white mt-1">{formatUsd(ex.paper_equity_usd)}</div>
+              <div className="text-[11px] font-mono text-slate-400 mt-1">
+                Live Read-Only: {ex.live_readonly_equity_usd !== null ? formatUsd(ex.live_readonly_equity_usd) : (ex.private_auth_ok ? 'Synced (Multi-Asset)' : 'Unauthenticated')}
+              </div>
+            </div>
 
-        <div className="nq-panel rounded-xl p-4">
-          <div className="text-xs text-slate-400">Available Margin</div>
-          <div className="text-xl font-mono font-bold text-[#00E5FF] mt-1">{formatUsd(ex.available_margin_usd)}</div>
-          <div className="text-[11px] font-mono text-slate-400 mt-1">Paper Collateral</div>
-        </div>
+            <div className="nq-panel rounded-xl p-4">
+              <div className="text-xs text-slate-400">Free Collateral</div>
+              <div className="text-xl font-mono font-bold text-[#00E5FF] mt-1">{formatUsd(ex.available_margin_usd)}</div>
+              <div className="text-[11px] font-mono text-slate-400 mt-1">Available Paper Capital</div>
+            </div>
 
-        <div className="nq-panel rounded-xl p-4">
-          <div className="text-xs text-slate-400">Locked Margin</div>
-          <div className="text-xl font-mono font-bold text-white mt-1">{formatUsd(ex.locked_margin_usd)}</div>
-          <div className="text-[11px] font-mono text-slate-400 mt-1">Open Orders & Futures</div>
-        </div>
+            <div className="nq-panel rounded-xl p-4">
+              <div className="text-xs text-slate-400">Reserved Margin / Notional</div>
+              <div className="text-xl font-mono font-bold text-white mt-1">{formatUsd(ex.locked_margin_usd)}</div>
+              <div className="text-[11px] font-mono text-slate-400 mt-1">
+                Notional: {formatUsd(ex.notional_exposure_usd ?? ex.locked_margin_usd)}
+              </div>
+            </div>
 
-        <div className="nq-panel rounded-xl p-4">
-          <div className="text-xs text-slate-400">Unrealized / 24h PnL</div>
-          <div className={`text-xl font-mono font-bold mt-1 ${ex.unrealized_pnl >= 0 ? 'text-[#10B981]' : 'text-[#EF4444]'}`}>
-            {formatSignedUsd(ex.unrealized_pnl)}
-          </div>
-          <div className="text-[11px] font-mono text-slate-400 mt-1">
-            24h Realized: {formatSignedUsd(ex.realized_pnl_24h)}
-          </div>
-        </div>
+            <div className="nq-panel rounded-xl p-4">
+              <div className="text-xs text-slate-400">Open / Realized PnL</div>
+              <div className={`text-xl font-mono font-bold mt-1 ${ex.unrealized_pnl >= 0 ? 'text-[#10B981]' : 'text-[#EF4444]'}`}>
+                {formatSignedUsd(ex.unrealized_pnl)}
+              </div>
+              <div className="text-[11px] font-mono text-slate-400 mt-1">
+                {realizedFmt.caption}: {realizedFmt.text}
+              </div>
+            </div>
 
-        <div className="nq-panel rounded-xl p-4 col-span-2 lg:col-span-1">
-          <div className="text-xs text-slate-400">
-            {exchange === 'bybit' ? 'UTA IM / MM Rate' : exchange === 'okx' ? 'OKX Margin Ratio' : 'Margin Ratio'}
+            <div className="nq-panel rounded-xl p-4 sm:col-span-2 lg:col-span-1">
+              <div className="text-xs text-slate-400">
+                {exchange === 'bybit' ? 'UTA IM / MM Rate' : exchange === 'okx' ? 'OKX Margin Ratio' : 'Margin Ratio'}
+              </div>
+              <div className="text-xl font-mono font-bold text-white mt-1">
+                {marginPct ?? 'Paper Isolated'}
+              </div>
+              <div className="text-[11px] font-mono text-slate-400 mt-1 flex items-center gap-1">
+                <CheckCircle2 className="w-3 h-3 text-[#10B981]" />
+                <span>{marginPct ? 'Exchange Reported' : 'Simulated Margin Mode'}</span>
+              </div>
+            </div>
           </div>
-          <div className="text-xl font-mono font-bold text-white mt-1">
-            {exchange === 'bybit'
-              ? `${ex.exchange_meta.im_rate_pct ?? 0}% / ${ex.exchange_meta.mm_rate_pct ?? 0}%`
-              : `${ex.exchange_meta.margin_ratio_pct ?? 0}%`}
-          </div>
-          <div className="text-[11px] font-mono text-[#10B981] mt-1 flex items-center gap-1">
-            <CheckCircle2 className="w-3 h-3" />
-            <span>Healthy Buffer</span>
-          </div>
-        </div>
-      </div>
+        );
+      })()}
 
       {/* Sub-Tabs */}
       <div className="flex items-center gap-1 p-1 rounded-lg bg-[#0B1120] border border-white/[0.08] overflow-x-auto no-scrollbar">

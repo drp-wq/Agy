@@ -482,7 +482,7 @@ export const ProMarketChart: React.FC<ProMarketChartProps> = ({
               aria-label="Trading pair"
               className="bg-[#05080F] border border-white/[0.12] rounded-lg px-2.5 py-1.5 min-h-[34px] text-xs font-mono font-semibold text-white focus:outline-none focus:border-[#00E5FF]"
             >
-              {AVAILABLE_SYMBOLS.map((sym) => (
+              {(AVAILABLE_SYMBOLS.includes(symbol) ? AVAILABLE_SYMBOLS : [symbol, ...AVAILABLE_SYMBOLS]).map((sym) => (
                 <option key={sym} value={sym}>
                   {sym}
                 </option>
@@ -629,6 +629,11 @@ export const ProMarketChart: React.FC<ProMarketChartProps> = ({
         </div>
       ) : (
         <div className="bg-[#05080F] relative">
+          {!loading && candles.length === 0 && (
+            <div className="p-8 text-center text-xs text-slate-400">
+              No OHLCV candles returned for {exchange.toUpperCase()} {symbol} ({timeframe}).
+            </div>
+          )}
           <div ref={mainContainerRef} className="w-full" />
           {oscillator !== 'none' && (
             <div className="border-t border-white/[0.08]">

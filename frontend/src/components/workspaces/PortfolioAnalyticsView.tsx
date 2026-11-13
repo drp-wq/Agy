@@ -3,6 +3,7 @@ import { createChart, AreaSeries, ColorType, Time } from 'lightweight-charts';
 import { ExchangeId, MiniAppStateResponse } from '../../types/quant';
 import { EXCHANGE_META, SectionHeader } from '../common/TerminalPrimitives';
 import { formatSignedUsd, formatUsd } from '../../utils/formatters';
+import { normalizeEquityCurve, summarizeDrawdown } from '../../utils/telemetryMetrics';
 
 interface PortfolioAnalyticsViewProps {
   state: MiniAppStateResponse;
@@ -11,10 +12,16 @@ interface PortfolioAnalyticsViewProps {
 export const PortfolioAnalyticsView: React.FC<PortfolioAnalyticsViewProps> = ({ state }) => {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const { analytics } = state;
+  const ddSummary = summarizeDrawdown(state.risk);
+  const normalizedCurve = normalizeEquityCurve(analytics.equity_curve);
+  const maxHistDd =
+    analytics.max_historical_drawdown_pct !== undefined
+      ? analytics.max_historical_drawdown_pct
+      : state.risk.max_drawdown_pct;
 
   useEffect(() => {
     const container = chartContainerRef.current;
-    if (!container || analytics.equity_curve.length === 0) return;
+    if (!container || normalizedCurve.length === 0) return;
 
     const chart = createChart(container, {
       width: container.clientWidth,
@@ -41,7 +48,7 @@ export const PortfolioAnalyticsView: React.FC<PortfolioAnalyticsViewProps> = ({ 
     });
 
     series.setData(
-      analytics.equity_curve.map((pt) => ({
+      normalizedCurve.map((pt) => ({
         time: pt.time as Time,
         value: pt.equity
       }))
@@ -62,25 +69,28 @@ export const PortfolioAnalyticsView: React.FC<PortfolioAnalyticsViewProps> = ({ 
     <div className="space-y-6">
       <SectionHeader
         title="Portfolio Analytics & Attribution"
-        subtitle="30-day paper-engine equity trajectory, risk-adjusted ratios, and strategy performance attribution"
+        subtitle="Verified paper-engine equity trajectory, closed-trade ratios, and strategy performance attribution"
       />
 
       {/* Core Performance KPIs */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="nq-panel rounded-xl p-4">
-          <div className="text-xs text-slate-400">Win Rate ({analytics.total_trades} Trades)</div>
+          <div className="text-xs text-slate-400">
+            Win Rate ({analytics.closed_trades ?? analytics.total_trades} Closed / {analytics.total_trades} Fills)
+          </div>
           <div className="text-2xl font-mono font-bold text-[#10B981] mt-1">
-            {analytics.win_rate_pct.toFixed(1)}%
+            {analytics.win_rate_pct !== null ? `${analytics.win_rate_pct.toFixed(1)}%` : 'Unavailable'}
           </div>
           <div className="text-[11px] font-mono text-slate-400 mt-1">
-            Avg Win {formatUsd(analytics.avg_win_usd)} / Loss {formatUsd(Math.abs(analytics.avg_loss_usd))}
+            Avg Win {analytics.avg_win_usd !== null ? formatUsd(analytics.avg_win_usd) : '—'} / Loss{' '}
+            {analytics.avg_loss_usd !== null ? formatUsd(Math.abs(analytics.avg_loss_usd)) : '—'}
           </div>
         </div>
 
         <div className="nq-panel rounded-xl p-4">
           <div className="text-xs text-slate-400">Profit Factor</div>
           <div className="text-2xl font-mono font-bold text-white mt-1">
-            {analytics.profit_factor.toFixed(2)}
+            {analytics.profit_factor !== null ? analytics.profit_factor.toFixed(2) : 'Unavailable'}
           </div>
           <div className="text-[11px] font-mono text-slate-400 mt-1">Gross Profit / Gross Loss</div>
         </div>
@@ -88,18 +98,23 @@ export const PortfolioAnalyticsView: React.FC<PortfolioAnalyticsViewProps> = ({ 
         <div className="nq-panel rounded-xl p-4">
           <div className="text-xs text-slate-400">Sharpe / Sortino</div>
           <div className="text-2xl font-mono font-bold text-[#00E5FF] mt-1">
-            {analytics.sharpe_ratio.toFixed(2)} / {analytics.sortino_ratio.toFixed(2)}
+            {analytics.sharpe_ratio !== null ? analytics.sharpe_ratio.toFixed(2) : '—'} /{' '}
+            {analytics.sortino_ratio !== null ? analytics.sortino_ratio.toFixed(2) : '—'}
           </div>
-          <div className="text-[11px] font-mono text-slate-400 mt-1">Annualized Paper Window</div>
+          <div className="text-[11px] font-mono text-slate-400 mt-1">
+            {analytics.metrics_note || 'Annualized Daily Return Window'}
+          </div>
         </div>
 
         <div className="nq-panel rounded-xl p-4">
           <div className="text-xs text-slate-400">Max Historical Drawdown</div>
           <div className="text-2xl font-mono font-bold text-amber-400 mt-1">
-            -{state.risk.max_drawdown_pct.toFixed(2)}%
+            {maxHistDd !== null && maxHistDd !== undefined
+              ? (maxHistDd > 0.004 ? `-${maxHistDd.toFixed(2)}%` : '0.00%')
+              : 'Unavailable'}
           </div>
           <div className="text-[11px] font-mono text-slate-400 mt-1">
-            Current: -{state.risk.current_drawdown_pct.toFixed(2)}%
+            Current: {ddSummary.displayValue}
           </div>
         </div>
       </div>
@@ -112,7 +127,13 @@ export const PortfolioAnalyticsView: React.FC<PortfolioAnalyticsViewProps> = ({ 
             Current: {formatUsd(state.risk.total_paper_equity_usd)}
           </span>
         </div>
-        <div ref={chartContainerRef} className="w-full bg-[#05080F]" />
+        {normalizedCurve.length === 0 ? (
+          <div className="p-8 text-center text-xs text-slate-400 bg-[#05080F]">
+            No timestamped equity points recorded yet.
+          </div>
+        ) : (
+          <div ref={chartContainerRef} className="w-full bg-[#05080F]" />
+        )}
       </div>
 
       {/* Attribution Split: By Exchange & By Strategy */}
@@ -152,16 +173,24 @@ export const PortfolioAnalyticsView: React.FC<PortfolioAnalyticsViewProps> = ({ 
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/[0.06]">
-                {analytics.pnl_by_strategy.map((row) => (
-                  <tr key={row.strategy}>
-                    <td className="py-2.5 text-slate-200 truncate max-w-[160px]">{row.strategy}</td>
-                    <td className="py-2.5 text-right text-slate-400">{row.trades}</td>
-                    <td className="py-2.5 text-right text-slate-200">{row.win_rate.toFixed(1)}%</td>
-                    <td className={`py-2.5 text-right font-semibold ${row.net_pnl_usd >= 0 ? 'text-[#10B981]' : 'text-[#EF4444]'}`}>
-                      {formatSignedUsd(row.net_pnl_usd)}
+                {analytics.pnl_by_strategy.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} className="py-6 text-center text-slate-400">
+                      No closed trades recorded per strategy yet.
                     </td>
                   </tr>
-                ))}
+                ) : (
+                  analytics.pnl_by_strategy.map((row) => (
+                    <tr key={row.strategy}>
+                      <td className="py-2.5 text-slate-200 truncate max-w-[160px]">{row.strategy}</td>
+                      <td className="py-2.5 text-right text-slate-400">{row.trades}</td>
+                      <td className="py-2.5 text-right text-slate-200">{row.win_rate.toFixed(1)}%</td>
+                      <td className={`py-2.5 text-right font-semibold ${row.net_pnl_usd >= 0 ? 'text-[#10B981]' : 'text-[#EF4444]'}`}>
+                        {formatSignedUsd(row.net_pnl_usd)}
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
