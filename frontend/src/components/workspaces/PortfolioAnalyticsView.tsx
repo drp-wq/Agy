@@ -1,0 +1,172 @@
+import React, { useEffect, useRef } from 'react';
+import { createChart, AreaSeries, ColorType, Time } from 'lightweight-charts';
+import { ExchangeId, MiniAppStateResponse } from '../../types/quant';
+import { EXCHANGE_META, SectionHeader } from '../common/TerminalPrimitives';
+import { formatSignedUsd, formatUsd } from '../../utils/formatters';
+
+interface PortfolioAnalyticsViewProps {
+  state: MiniAppStateResponse;
+}
+
+export const PortfolioAnalyticsView: React.FC<PortfolioAnalyticsViewProps> = ({ state }) => {
+  const chartContainerRef = useRef<HTMLDivElement>(null);
+  const { analytics } = state;
+
+  useEffect(() => {
+    const container = chartContainerRef.current;
+    if (!container || analytics.equity_curve.length === 0) return;
+
+    const chart = createChart(container, {
+      width: container.clientWidth,
+      height: 280,
+      layout: {
+        background: { type: ColorType.Solid, color: '#05080F' },
+        textColor: '#94A3B8',
+        fontFamily: "'JetBrains Mono', monospace",
+        fontSize: 11
+      },
+      grid: {
+        vertLines: { color: 'rgba(148, 163, 184, 0.06)' },
+        horzLines: { color: 'rgba(148, 163, 184, 0.06)' }
+      },
+      rightPriceScale: { borderColor: 'rgba(148, 163, 184, 0.14)' },
+      timeScale: { borderColor: 'rgba(148, 163, 184, 0.14)', timeVisible: false }
+    });
+
+    const series = chart.addSeries(AreaSeries, {
+      lineColor: '#00E5FF',
+      topColor: 'rgba(0, 229, 255, 0.28)',
+      bottomColor: 'rgba(5, 8, 15, 0.0)',
+      lineWidth: 2
+    });
+
+    series.setData(
+      analytics.equity_curve.map((pt) => ({
+        time: pt.time as Time,
+        value: pt.equity
+      }))
+    );
+    chart.timeScale().fitContent();
+
+    const handleResize = () => {
+      if (container) chart.applyOptions({ width: container.clientWidth });
+    };
+    window.addEventListener('resize', handleResize);
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      chart.remove();
+    };
+  }, [analytics.equity_curve]);
+
+  return (
+    <div className="space-y-6">
+      <SectionHeader
+        title="Portfolio Analytics & Attribution"
+        subtitle="30-day paper-engine equity trajectory, risk-adjusted ratios, and strategy performance attribution"
+      />
+
+      {/* Core Performance KPIs */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="nq-panel rounded-xl p-4">
+          <div className="text-xs text-slate-400">Win Rate ({analytics.total_trades} Trades)</div>
+          <div className="text-2xl font-mono font-bold text-[#10B981] mt-1">
+            {analytics.win_rate_pct.toFixed(1)}%
+          </div>
+          <div className="text-[11px] font-mono text-slate-400 mt-1">
+            Avg Win {formatUsd(analytics.avg_win_usd)} / Loss {formatUsd(Math.abs(analytics.avg_loss_usd))}
+          </div>
+        </div>
+
+        <div className="nq-panel rounded-xl p-4">
+          <div className="text-xs text-slate-400">Profit Factor</div>
+          <div className="text-2xl font-mono font-bold text-white mt-1">
+            {analytics.profit_factor.toFixed(2)}
+          </div>
+          <div className="text-[11px] font-mono text-slate-400 mt-1">Gross Profit / Gross Loss</div>
+        </div>
+
+        <div className="nq-panel rounded-xl p-4">
+          <div className="text-xs text-slate-400">Sharpe / Sortino</div>
+          <div className="text-2xl font-mono font-bold text-[#00E5FF] mt-1">
+            {analytics.sharpe_ratio.toFixed(2)} / {analytics.sortino_ratio.toFixed(2)}
+          </div>
+          <div className="text-[11px] font-mono text-slate-400 mt-1">Annualized Paper Window</div>
+        </div>
+
+        <div className="nq-panel rounded-xl p-4">
+          <div className="text-xs text-slate-400">Max Historical Drawdown</div>
+          <div className="text-2xl font-mono font-bold text-amber-400 mt-1">
+            -{state.risk.max_drawdown_pct.toFixed(2)}%
+          </div>
+          <div className="text-[11px] font-mono text-slate-400 mt-1">
+            Current: -{state.risk.current_drawdown_pct.toFixed(2)}%
+          </div>
+        </div>
+      </div>
+
+      {/* Equity Curve Chart */}
+      <div className="nq-panel rounded-xl overflow-hidden">
+        <div className="px-4 py-3 border-b border-white/[0.08] flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-white">Aggregate Paper Equity Curve (USD)</h3>
+          <span className="text-xs font-mono text-[#00E5FF]">
+            Current: {formatUsd(state.risk.total_paper_equity_usd)}
+          </span>
+        </div>
+        <div ref={chartContainerRef} className="w-full bg-[#05080F]" />
+      </div>
+
+      {/* Attribution Split: By Exchange & By Strategy */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="nq-panel rounded-xl p-4">
+          <h3 className="text-sm font-semibold text-white pb-3 border-b border-white/[0.08]">
+            Net PnL Attribution by Exchange
+          </h3>
+          <div className="divide-y divide-white/[0.06] mt-2 text-xs font-mono">
+            {(['binance', 'bybit', 'okx'] as ExchangeId[]).map((exId) => {
+              const pnl = analytics.pnl_by_exchange[exId] || 0;
+              const meta = EXCHANGE_META[exId];
+              return (
+                <div key={exId} className="py-3 flex items-center justify-between">
+                  <span className={`font-semibold ${meta.accentText}`}>{meta.name} Paper Ledger</span>
+                  <span className={pnl >= 0 ? 'text-[#10B981] font-semibold' : 'text-[#EF4444] font-semibold'}>
+                    {formatSignedUsd(pnl)}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="nq-panel rounded-xl p-4">
+          <h3 className="text-sm font-semibold text-white pb-3 border-b border-white/[0.08]">
+            Attribution by Quantitative Strategy
+          </h3>
+          <div className="overflow-x-auto mt-2">
+            <table className="w-full text-left text-xs font-mono">
+              <thead>
+                <tr className="text-[11px] text-slate-400 border-b border-white/[0.06]">
+                  <th className="py-2">Strategy</th>
+                  <th className="py-2 text-right">Trades</th>
+                  <th className="py-2 text-right">Win %</th>
+                  <th className="py-2 text-right">Net PnL</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/[0.06]">
+                {analytics.pnl_by_strategy.map((row) => (
+                  <tr key={row.strategy}>
+                    <td className="py-2.5 text-slate-200 truncate max-w-[160px]">{row.strategy}</td>
+                    <td className="py-2.5 text-right text-slate-400">{row.trades}</td>
+                    <td className="py-2.5 text-right text-slate-200">{row.win_rate.toFixed(1)}%</td>
+                    <td className={`py-2.5 text-right font-semibold ${row.net_pnl_usd >= 0 ? 'text-[#10B981]' : 'text-[#EF4444]'}`}>
+                      {formatSignedUsd(row.net_pnl_usd)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};

@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NEON QUANT // Multi-Exchange AI Paper Engine</title>
+  <style>
+    :root {
+      --bg: #070913;
+      --panel: #0e1326;
+      --panel-2: #121a33;
+      --border: #1f2b4d;
+      --cyan: #00f0ff;
+      --magenta: #ff2a85;
+      --green: #00ff9d;
+      --amber: #ffb800;
+      --red: #ff4466;
+      --text: #e2e8f0;
+      --muted: #8492a6;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: radial-gradient(circle at top right, #141a3a 0%, var(--bg) 55%);
+      color: var(--text);
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, monospace;
+      min-height: 100vh;
+      padding: 16px;
+    }
+    .header {
+      display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center;
+      gap: 12px; padding: 14px 18px; background: var(--panel);
+      border: 1px solid var(--border); border-radius: 12px;
+      box-shadow: 0 0 24px rgba(0, 240, 255, 0.08);
+      margin-bottom: 16px;
+    }
+    .brand { font-size: 1.15rem; font-weight: 800; letter-spacing: 0.08em; color: var(--cyan); }
+    .badges { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    .badge {
+      padding: 5px 10px; border-radius: 999px; font-size: 0.75rem; font-weight: 700;
+      border: 1px solid currentColor; letter-spacing: 0.04em;
+    }
+    .badge-paper { color: var(--green); background: rgba(0, 255, 157, 0.08); }
+    .badge-locked { color: var(--cyan); background: rgba(0, 240, 255, 0.08); }
+    .badge-warn { color: var(--red); background: rgba(255, 68, 102, 0.12); }
+    .btn {
+      background: var(--panel-2); color: var(--cyan); border: 1px solid var(--cyan);
+      padding: 7px 14px; border-radius: 8px; cursor: pointer; font-weight: 700; font-size: 0.8rem;
+      transition: all 0.15s ease;
+    }
+    .btn:hover { background: rgba(0, 240, 255, 0.15); }
+    .btn-danger { color: var(--red); border-color: var(--red); }
+    .btn-danger:hover { background: rgba(255, 68, 102, 0.18); }
+    .grid-kpi {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+      gap: 12px; margin-bottom: 16px;
+    }
+    .card {
+      background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+      padding: 14px 16px; box-shadow: 0 4px 18px rgba(0, 0, 0, 0.35);
+    }
+    .kpi-label { font-size: 0.72rem; text-transform: uppercase; color: var(--muted); letter-spacing: 0.07em; }
+    .kpi-val { font-size: 1.45rem; font-weight: 800; margin-top: 6px; color: var(--text); }
+    .exchange-glance {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:16px}
+    .glance {min-width:0;border-top:2px solid var(--cyan)}
+    .glance-meta {color:var(--muted);font-size:.8rem;line-height:1.8;margin-top:10px;overflow-wrap:anywhere}
+    .grid-main {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+      gap: 16px; margin-bottom: 16px;
+    }
+    h2 {
+      font-size: 0.9rem; text-transform: uppercase; letter-spacing: 0.08em;
+      color: var(--cyan); margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center;
+    }
+    table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+    th, td { text-align: left; padding: 7px 6px; border-bottom: 1px solid rgba(31, 43, 77, 0.6); }
+    th { color: var(--muted); font-size: 0.72rem; text-transform: uppercase; }
+    .scroll-x { overflow-x: auto; max-height: 320px; overflow-y: auto; }
+    .pos { color: var(--green); }
+    .neg { color: var(--red); }
+    .tag { padding: 2px 7px; border-radius: 6px; font-size: 0.7rem; font-weight: 700; background: var(--panel-2); }
+    .chart-controls { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+    select {
+      background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
+      border-radius: 6px; padding: 5px 8px; font-size: 0.8rem;
+    }
+    canvas { width: 100%; height: 210px; background: #090d1c; border-radius: 8px; border: 1px solid var(--border); }
+    @media (max-width: 768px) {
+      .grid-main { grid-template-columns: 1fr; }
+      .exchange-glance {grid-template-columns:1fr;}
+      body { padding: 10px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div>
+      <div class="brand">NEON QUANT // BINANCE · OKX · BYBIT</div>
+      <div style="font-size:0.75rem;color:var(--muted);margin-top:3px;" id="last-update">Initializing telemetry...</div>
+    </div>
+    <div class="badges">
+      {% if google_enabled %}<a class="btn" href="/auth/google">Sign in with Google</a><button class="btn" onclick="fetch('/auth/logout',{method:'POST'}).then(()=>location.reload())">Sign out</button>{% endif %}
+      <span class="badge badge-paper" id="badge-mode">MODE: PAPER_ONLY</span>
+      <span class="badge badge-locked" id="badge-live">LIVE EXECUTION: DISABLED</span>
+      <button class="btn" onclick="triggerScan()">SCAN NOW</button>
+      <button class="btn btn-danger" id="btn-estop" onclick="toggleEmergencyStop()">EMERGENCY STOP</button>
+    </div>
+  </div>
+
+  <div class="grid-kpi">
+    <div class="card"><div class="kpi-label">Paper Equity</div><div class="kpi-val" id="kpi-equity">$0.00</div></div>
+    <div class="card"><div class="kpi-label">Paper PnL</div><div class="kpi-val" id="kpi-pnl">$0.00</div></div>
+    <div class="card"><div class="kpi-label">Portfolio Exposure</div><div class="kpi-val" id="kpi-exp">0.0%</div></div>
+    <div class="card"><div class="kpi-label">Open Positions</div><div class="kpi-val" id="kpi-pos">0</div></div>
+    <div class="card"><div class="kpi-label">Active Signals</div><div class="kpi-val" id="kpi-sig">0</div></div>
+  </div>
+
+  <section class="exchange-glance" aria-label="Three exchange overview">
+    <div class="card glance" id="glance-binance"><h2>BINANCE <span class="badge" id="g-binance-status">Checking</span></h2><div class="kpi-val" id="g-binance-markets">—</div><div class="kpi-label">Scanned markets</div><div class="glance-meta" id="g-binance-detail">Loading…</div></div>
+    <div class="card glance" id="glance-okx"><h2>OKX <span class="badge" id="g-okx-status">Checking</span></h2><div class="kpi-val" id="g-okx-markets">—</div><div class="kpi-label">Scanned markets</div><div class="glance-meta" id="g-okx-detail">Loading…</div></div>
+    <div class="card glance" id="glance-bybit"><h2>BYBIT <span class="badge" id="g-bybit-status">Checking</span></h2><div class="kpi-val" id="g-bybit-markets">—</div><div class="kpi-label">Scanned markets</div><div class="glance-meta" id="g-bybit-detail">Loading…</div></div>
+  </section>
+
+  <div class="grid-main">
+    <div class="card">
+      <h2>Exchange Connection &amp; Readiness</h2>
+      <div class="scroll-x">
+        <table>
+          <thead><tr><th>Exchange</th><th>Health</th><th>Auth</th><th>Errors</th><th>Read-Only</th></tr></thead>
+          <tbody id="tbl-exchanges"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Multi-Timeframe Chart</h2>
+      <div class="chart-controls">
+        <select id="sel-ex" onchange="loadChart()"><option value="okx">OKX</option><option value="bybit">Bybit</option><option value="binance">Binance</option></select>
+        <select id="sel-sym" onchange="loadChart()"><option value="BTC/USDT">BTC/USDT</option><option value="ETH/USDT">ETH/USDT</option><option value="SOL/USDT">SOL/USDT</option></select>
+        <select id="sel-tf" onchange="loadChart()"><option value="1m">1m</option><option value="5m">5m</option><option value="15m" selected>15m</option><option value="1h">1h</option><option value="4h">4h</option><option value="1d">1d</option></select>
+      </div>
+      <canvas id="price-canvas" width="600" height="210"></canvas>
+    </div>
+  </div>
+
+  <div class="grid-main">
+    <div class="card">
+      <h2>Global Scanner &amp; Ranked Opportunities</h2>
+      <div class="scroll-x">
+        <table>
+          <thead><tr><th>Ex</th><th>Symbol</th><th>Type</th><th>Price</th><th>RSI</th><th>Regime</th><th>Score</th></tr></thead>
+          <tbody id="tbl-scanner"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>AI Strategy Signals</h2>
+      <div class="scroll-x">
+        <table>
+          <thead><tr><th>Strategy</th><th>Ex</th><th>Symbol</th><th>Dir</th><th>R:R</th><th>Conf</th></tr></thead>
+          <tbody id="tbl-signals"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid-main">
+    <div class="card">
+      <h2>Paper Bot Manager</h2>
+      <div class="scroll-x">
+        <table>
+          <thead><tr><th>Bot</th><th>Ex</th><th>Cash</th><th>Realized</th><th>Pos</th><th>Action</th></tr></thead>
+          <tbody id="tbl-bots"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Risk Alerts &amp; Recent Paper Orders</h2>
+      <div class="scroll-x">
+        <table>
+          <thead><tr><th>Time / Bot</th><th>Symbol</th><th>Side</th><th>Status</th><th>Price / Reason</th></tr></thead>
+          <tbody id="tbl-orders"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let estopActive = false;
+
+    async function fetchState() {
+      const res = await fetch('/api/state');
+      if (!res.ok) return;
+      const d = await res.json();
+      document.getElementById('last-update').textContent =
+        `Cycle #${d.cycle_count} | Last scan: ${d.last_cycle_at || 'pending'} | Reconciled: ${d.reconciliation.reconciled}`;
+      document.getElementById('kpi-equity').textContent = `$${d.portfolio.total_equity_usd.toLocaleString()}`;
+      const pnlEl = document.getElementById('kpi-pnl');
+      pnlEl.textContent = `$${d.portfolio.total_pnl_usd.toFixed(2)} (${d.portfolio.total_pnl_pct}%)`;
+      pnlEl.className = 'kpi-val ' + (d.portfolio.total_pnl_usd >= 0 ? 'pos' : 'neg');
+      document.getElementById('kpi-exp').textContent = `${(d.risk.portfolio_exposure_pct * 100).toFixed(1)}%`;
+      document.getElementById('kpi-pos').textContent = d.portfolio.open_positions.length;
+      document.getElementById('kpi-sig').textContent = d.signals.length;
+
+      const auths = d.auth_verification || {};
+      for (const ex of ['binance', 'okx', 'bybit']) {
+        const status = (d.exchanges || []).find(e => e.exchange === ex);
+        const auth = auths[ex] || {};
+        const snaps = (d.scanner || []).filter(s => s.exchange === ex);
+        const bots = (d.bots || []).filter(b => b.exchange === ex);
+        const positions = (d.portfolio?.open_positions || []).filter(p => p.exchange === ex);
+        const healthy = status?.healthy === true;
+        document.getElementById('g-' + ex + '-status').textContent = healthy ? 'FEED ONLINE' : 'CHECK FEED';
+        document.getElementById('g-' + ex + '-status').style.color = healthy ? 'var(--green)' : 'var(--amber)';
+        document.getElementById('g-' + ex + '-markets').textContent = snaps.length;
+        document.getElementById('g-' + ex + '-detail').textContent =
+          'Auth: ' + (auth.status || 'pending') + ' · Assets: ' + (auth.asset_count ?? '—') +
+          ' · Paper bots: ' + bots.filter(b => b.enabled).length + '/' + bots.length +
+          ' · Open paper positions: ' + positions.length +
+          ' · Errors: ' + (status?.consecutive_errors ?? '—');
+      }
+      estopActive = d.risk.emergency_stop_active;
+      const btnStop = document.getElementById('btn-estop');
+      btnStop.textContent = estopActive ? 'RESET STOP' : 'EMERGENCY STOP';
+
+      document.getElementById('tbl-exchanges').innerHTML = d.exchanges.map(e => {
+        const auth = (d.auth_verification[e.exchange] || {}).status || (e.credentials_configured ? 'configured' : 'public');
+        return `<tr>
+          <td><strong>${e.exchange.toUpperCase()}</strong></td>
+          <td class="${e.healthy ? 'pos' : 'neg'}">${e.healthy ? 'ONLINE' : 'DEGRADED'}</td>
+          <td>${auth}</td>
+          <td>${e.consecutive_errors}</td>
+          <td>${e.read_only_enforced ? 'LOCKED' : 'ERR'}</td>
+        </tr>`;
+      }).join('');
+
+      document.getElementById('tbl-scanner').innerHTML = d.scanner.map(s => `<tr>
+        <td>${s.exchange.toUpperCase()}</td>
+        <td><strong>${s.symbol}</strong></td>
+        <td><span class="tag">${s.market_type}</span></td>
+        <td>${Number(s.last_price).toFixed(4)}</td>
+        <td>${s.rsi}</td>
+        <td>${s.regime}</td>
+        <td class="pos">${s.opportunity_score}</td>
+      </tr>`).join('');
+
+      document.getElementById('tbl-signals').innerHTML = d.signals.map(s => `<tr>
+        <td>${s.strategy_name}</td>
+        <td>${s.exchange.toUpperCase()}</td>
+        <td>${s.symbol}</td>
+        <td class="${s.direction === 'long' ? 'pos' : 'neg'}">${s.direction.toUpperCase()}</td>
+        <td>${s.risk_reward_ratio}</td>
+        <td>${(s.confidence_score * 100).toFixed(1)}%</td>
+      </tr>`).join('');
+
+      document.getElementById('tbl-bots').innerHTML = d.bots.map(b => `<tr>
+        <td>${b.name}</td>
+        <td>${b.exchange.toUpperCase()}</td>
+        <td>$${b.cash_usd}</td>
+        <td class="${b.realized_pnl_usd >= 0 ? 'pos' : 'neg'}">$${b.realized_pnl_usd}</td>
+        <td>${b.open_positions}</td>
+        <td><button class="btn" onclick="toggleBot('${b.bot_id}', ${!b.enabled})">${b.enabled ? 'PAUSE' : 'START'}</button></td>
+      </tr>`).join('');
+
+      document.getElementById('tbl-orders').innerHTML = d.orders.slice(0, 20).map(o => `<tr>
+        <td>${o.bot_id}</td>
+        <td>${o.symbol}</td>
+        <td>${o.side.toUpperCase()}</td>
+        <td><span class="tag">${o.status}</span></td>
+        <td>${o.avg_fill_price || o.reject_reason || '-'}</td>
+      </tr>`).join('');
+    }
+
+    async function loadChart() {
+      const ex = document.getElementById('sel-ex').value;
+      const sym = document.getElementById('sel-sym').value;
+      const tf = document.getElementById('sel-tf').value;
+      const res = await fetch(`/api/candles/${ex}/spot/${sym}/${tf}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      drawCandles(data.candles || []);
+    }
+
+    function drawCandles(candles) {
+      const canvas = document.getElementById('price-canvas');
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      if (!candles.length) return;
+      const highs = candles.map(c => c.high), lows = candles.map(c => c.low);
+      const maxP = Math.max(...highs), minP = Math.min(...lows);
+      const span = maxP - minP || 1;
+      const w = canvas.width / candles.length;
+      candles.forEach((c, i) => {
+        const x = i * w + w * 0.5;
+        const yH = canvas.height - ((c.high - minP) / span) * (canvas.height - 20) - 10;
+        const yL = canvas.height - ((c.low - minP) / span) * (canvas.height - 20) - 10;
+        const yO = canvas.height - ((c.open - minP) / span) * (canvas.height - 20) - 10;
+        const yC = canvas.height - ((c.close - minP) / span) * (canvas.height - 20) - 10;
+        const up = c.close >= c.open;
+        ctx.strokeStyle = up ? '#00ff9d' : '#ff2a85';
+        ctx.fillStyle = ctx.strokeStyle;
+        ctx.beginPath(); ctx.moveTo(x, yH); ctx.lineTo(x, yL); ctx.stroke();
+        ctx.fillRect(x - Math.max(1, w * 0.3), Math.min(yO, yC), Math.max(2, w * 0.6), Math.max(2, Math.abs(yC - yO)));
+      });
+    }
+
+    async function toggleBot(botId, enabled) {
+      await fetch(`/api/bots/${botId}/toggle`, {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({enabled})
+      });
+      fetchState();
+    }
+
+    async function triggerScan() {
+      await fetch('/api/scan-now', {method: 'POST'});
+      fetchState();
+      loadChart();
+    }
+
+    async function toggleEmergencyStop() {
+      const url = estopActive ? '/api/risk/reset-stop' : '/api/risk/emergency-stop';
+      await fetch(url, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({reason: 'Dashboard operator action'})});
+      fetchState();
+    }
+
+    fetchState();
+    loadChart();
+    setInterval(fetchState, 10000);
+  </script>
+</body>
+</html>

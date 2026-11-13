@@ -1,0 +1,6 @@
+{
+  "name": "PROTTUSH JARVIS — Midnight Aurora V7",
+  "description": "Futuristic 3D Universal Intelligence Command Center integrating Trading Telemetry, System Health, Communications, and Spatial Operations.",
+  "requestFramePermissions": ["geolocation"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
