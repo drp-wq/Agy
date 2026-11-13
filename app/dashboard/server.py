@@ -17,6 +17,7 @@ from pydantic import BaseModel
 from app.core.models import ExchangeId, MarketType
 from app.core.security import LIVE_EXECUTION_PERMANENTLY_DISABLED, assert_paper_only
 from app.dashboard.auth import DashboardAuthConfig, make_auth_dependency, security
+from app.dashboard.candles import CandleFeedService
 from app.dashboard.google_auth import install as install_google, CALLBACK
 from app.dashboard.miniapp_presenter import (
     build_miniapp_health_payload,
@@ -64,6 +65,7 @@ def create_dashboard_app(
     auth_cfg = auth_config or DashboardAuthConfig.load_or_create()
     basic_auth = make_auth_dependency(auth_cfg)
     google_cfg, oauth, google_enabled = install_google(app)
+    candle_feed = CandleFeedService()
 
     if STATIC_MINIAPP_ASSETS_DIR.exists():
         app.mount(
@@ -264,29 +266,22 @@ def create_dashboard_app(
         base: str,
         quote: str,
         timeframe: str,
+        since: int | None = None,
+        limit: int = 120,
+        allow_stale: bool = False,
         _user: str = Depends(require_auth),
     ) -> dict[str, Any]:
-        symbol = f"{base.upper()}/{quote.upper()}"
-        try:
-            ex_id = ExchangeId(exchange.lower())
-            mtype = MarketType(market_type.lower())
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc))
-
-        key = f"{ex_id.value}:{mtype.value}:{symbol}"
-        snap = service.scanner.latest_snapshots.get(key)
-        if snap and timeframe in snap.candles_by_tf:
-            candles = [c.model_dump() for c in snap.candles_by_tf[timeframe]]
-            return {"exchange": ex_id.value, "symbol": symbol, "timeframe": timeframe, "candles": candles}
-
-        adapter = service.registry.get(ex_id)
-        fetched = await adapter.fetch_ohlcv(symbol, mtype, timeframe=timeframe, limit=100)
-        return {
-            "exchange": ex_id.value,
-            "symbol": symbol,
-            "timeframe": timeframe,
-            "candles": [c.model_dump() for c in fetched],
-        }
+        return await candle_feed.get_candles(
+            service=service,
+            exchange=exchange,
+            market_type=market_type,
+            base=base,
+            quote=quote,
+            timeframe=timeframe,
+            since=since,
+            limit=limit,
+            allow_stale=allow_stale,
+        )
 
     @app.post("/api/bots/{bot_id}/toggle")
     async def toggle_bot(
@@ -342,10 +337,23 @@ def create_dashboard_app(
         base: str,
         quote: str,
         timeframe: str,
+        since: int | None = None,
+        limit: int = 120,
+        allow_stale: bool = False,
         _user: str = Depends(require_miniapp_auth),
     ) -> dict[str, Any]:
         normalized_mtype = "perp" if market_type.lower() == "futures" else market_type.lower()
-        raw = await get_candles(exchange, normalized_mtype, base, quote, timeframe, _user)
+        raw = await candle_feed.get_candles(
+            service=service,
+            exchange=exchange,
+            market_type=normalized_mtype,
+            base=base,
+            quote=quote,
+            timeframe=timeframe,
+            since=since,
+            limit=limit,
+            allow_stale=allow_stale,
+        )
         normalized_candles = []
         for c in raw.get("candles", []):
             ts_ms = c.get("timestamp")

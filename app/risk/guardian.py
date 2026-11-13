@@ -274,6 +274,11 @@ class GlobalRiskGuardian:
 
     def status_summary(self, total_equity_usd: float, positions: list[PaperPosition]) -> dict[str, Any]:
         port_exp = sum(abs(p.qty * p.mark_price) for p in positions)
+        current_dd_pct = (
+            round(max(0.0, ((self.peak_equity_usd - total_equity_usd) / self.peak_equity_usd) * 100.0), 2)
+            if self.peak_equity_usd > 0
+            else None
+        )
         return {
             "emergency_stop_active": self.emergency_stop_active,
             "emergency_stop_reason": self.emergency_stop_reason,
@@ -281,6 +286,10 @@ class GlobalRiskGuardian:
             "circuit_breaker_reason": self.circuit_breaker_reason,
             "total_equity_usd": round(total_equity_usd, 2),
             "peak_equity_usd": round(self.peak_equity_usd, 2),
+            "daily_start_equity_usd": round(self.daily_start_equity_usd, 2),
+            "current_drawdown_pct": current_dd_pct,
+            "max_drawdown_limit_pct": round(self.policy.max_drawdown_pct * 100.0, 2),
+            "daily_loss_limit_pct": round(self.policy.daily_loss_limit_pct * 100.0, 2),
             "portfolio_exposure_usd": round(port_exp, 2),
             "portfolio_exposure_pct": round(port_exp / total_equity_usd, 4) if total_equity_usd > 0 else 0.0,
             "open_positions": len(positions),

@@ -209,11 +209,20 @@ class NeonQuantApiClient {
     symbol: string,
     timeframe: Timeframe,
     initData?: string,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    options?: { sinceSec?: number; limit?: number }
   ): Promise<CandlesResponse> {
     const [base, quote] = symbol.split('/');
     const apiMarketType = marketType === 'futures' ? 'perp' : marketType;
-    const endpoint = `${this.baseUrl}/api/miniapp/candles/${exchange}/${apiMarketType}/${base}/${quote}/${timeframe}`;
+    const qs = new URLSearchParams();
+    if (options?.sinceSec && options.sinceSec > 0) {
+      qs.set('since', String(options.sinceSec));
+    }
+    if (options?.limit && options.limit > 0) {
+      qs.set('limit', String(options.limit));
+    }
+    const queryStr = qs.toString() ? `?${qs.toString()}` : '';
+    const endpoint = `${this.baseUrl}/api/miniapp/candles/${exchange}/${apiMarketType}/${base}/${quote}/${timeframe}${queryStr}`;
 
     try {
       const res = await fetch(endpoint, {
@@ -237,11 +246,23 @@ class NeonQuantApiClient {
           timeframe,
           candles: normalizeCandles(rawCandles),
           source: 'fast_api',
-          fetched_at: Math.floor(Date.now() / 1000)
+          backend_source: typeof json?.source === 'string' ? json.source : 'exchange_rest',
+          stale: Boolean(json?.stale),
+          exchange_healthy: json?.exchange_healthy !== false,
+          incremental: Boolean(json?.incremental),
+          fetched_at: typeof json?.fetched_at === 'number' ? json.fetched_at : Math.floor(Date.now() / 1000)
         };
       }
 
-      throw new ApiFetchError(`Candles endpoint returned HTTP ${res.status}`, res.status);
+      let detailMsg = `Candles endpoint returned HTTP ${res.status}`;
+      try {
+        const errJson = await res.json();
+        if (errJson?.detail?.message) detailMsg = String(errJson.detail.message);
+        else if (typeof errJson?.detail === 'string') detailMsg = errJson.detail;
+      } catch {
+        // ignore JSON parse error
+      }
+      throw new ApiFetchError(detailMsg, res.status);
     } catch (err) {
       if (err instanceof DOMException && err.name === 'AbortError') throw err;
       if (err instanceof TelegramAuthError) throw err;
@@ -253,6 +274,9 @@ class NeonQuantApiClient {
           timeframe,
           candles: generateDemoCandles(exchange, marketType, symbol, timeframe),
           source: 'demo_deterministic',
+          backend_source: 'demo_deterministic',
+          stale: false,
+          exchange_healthy: true,
           fetched_at: Math.floor(Date.now() / 1000)
         };
       }

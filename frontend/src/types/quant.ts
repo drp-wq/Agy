@@ -55,6 +55,10 @@ export interface CandlesResponse {
   timeframe: Timeframe;
   candles: CandleBar[];
   source: 'fast_api' | 'demo_deterministic';
+  backend_source?: string;
+  stale?: boolean;
+  exchange_healthy?: boolean;
+  incremental?: boolean;
   fetched_at: number;
 }
 

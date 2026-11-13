@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>NEON QUANT // Multi-Exchange AI Paper Engine</title>
   <style>
     :root {
@@ -19,10 +19,12 @@
       --muted: #8492a6;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { max-width: 100%; overflow-x: hidden; }
     body {
       background: radial-gradient(circle at top right, #141a3a 0%, var(--bg) 55%);
       color: var(--text);
       font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, monospace;
+      font-variant-numeric: tabular-nums;
       min-height: 100vh;
       padding: 16px;
     }
@@ -31,123 +33,401 @@
       gap: 12px; padding: 14px 18px; background: var(--panel);
       border: 1px solid var(--border); border-radius: 12px;
       box-shadow: 0 0 24px rgba(0, 240, 255, 0.08);
-      margin-bottom: 16px;
+      margin-bottom: 12px;
     }
     .brand { font-size: 1.15rem; font-weight: 800; letter-spacing: 0.08em; color: var(--cyan); }
     .badges { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
     .badge {
-      padding: 5px 10px; border-radius: 999px; font-size: 0.75rem; font-weight: 700;
-      border: 1px solid currentColor; letter-spacing: 0.04em;
+      padding: 5px 10px; border-radius: 999px; font-size: 0.72rem; font-weight: 700;
+      border: 1px solid currentColor; letter-spacing: 0.04em; white-space: nowrap;
     }
     .badge-paper { color: var(--green); background: rgba(0, 255, 157, 0.08); }
     .badge-locked { color: var(--cyan); background: rgba(0, 240, 255, 0.08); }
     .badge-warn { color: var(--red); background: rgba(255, 68, 102, 0.12); }
+    .badge-amber { color: var(--amber); background: rgba(255, 184, 0, 0.12); }
     .btn {
       background: var(--panel-2); color: var(--cyan); border: 1px solid var(--cyan);
-      padding: 7px 14px; border-radius: 8px; cursor: pointer; font-weight: 700; font-size: 0.8rem;
-      transition: all 0.15s ease;
+      padding: 7px 14px; min-height: 36px; border-radius: 8px; cursor: pointer;
+      font-weight: 700; font-size: 0.78rem; transition: all 0.15s ease;
+      display: inline-flex; align-items: center; justify-content: center; gap: 6px;
     }
     .btn:hover { background: rgba(0, 240, 255, 0.15); }
+    .btn-sm { padding: 4px 10px; min-height: 30px; font-size: 0.72rem; }
+    .btn-active { background: rgba(0, 240, 255, 0.22); box-shadow: 0 0 10px rgba(0, 240, 255, 0.2); }
     .btn-danger { color: var(--red); border-color: var(--red); }
     .btn-danger:hover { background: rgba(255, 68, 102, 0.18); }
+    .btn-disabled, .btn:disabled { opacity: 0.45; cursor: not-allowed; border-color: var(--border); color: var(--muted); }
+    .btn-disabled:hover, .btn:disabled:hover { background: var(--panel-2); }
+    .nav-tabs {
+      display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; align-items: center;
+    }
+    .tab-btn {
+      background: var(--panel); color: var(--muted); border: 1px solid var(--border);
+      padding: 7px 13px; min-height: 36px; border-radius: 8px; cursor: pointer;
+      font-size: 0.76rem; font-weight: 700; transition: all 0.15s ease;
+    }
+    .tab-btn.active { color: var(--cyan); border-color: var(--cyan); background: rgba(0, 240, 255, 0.1); }
+    .error-banner {
+      display: none; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;
+      padding: 10px 14px; margin-bottom: 14px; border-radius: 10px;
+      background: rgba(255, 68, 102, 0.14); border: 1px solid var(--red); color: #ffd4dc; font-size: 0.8rem;
+    }
     .grid-kpi {
-      display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 165px), 1fr));
       gap: 12px; margin-bottom: 16px;
     }
     .card {
       background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
       padding: 14px 16px; box-shadow: 0 4px 18px rgba(0, 0, 0, 0.35);
+      min-width: 0;
     }
-    .kpi-label { font-size: 0.72rem; text-transform: uppercase; color: var(--muted); letter-spacing: 0.07em; }
-    .kpi-val { font-size: 1.45rem; font-weight: 800; margin-top: 6px; color: var(--text); }
-    .exchange-glance {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:16px}
-    .glance {min-width:0;border-top:2px solid var(--cyan)}
-    .glance-meta {color:var(--muted);font-size:.8rem;line-height:1.8;margin-top:10px;overflow-wrap:anywhere}
+    .kpi-label { font-size: 0.7rem; text-transform: uppercase; color: var(--muted); letter-spacing: 0.07em; display: flex; justify-content: space-between; gap: 6px; }
+    .kpi-val { font-size: 1.35rem; font-weight: 800; margin-top: 6px; color: var(--text); transition: color 0.25s ease, transform 0.2s ease; }
+    .kpi-sub { font-size: 0.72rem; color: var(--muted); margin-top: 4px; }
+    .val-flash { color: var(--cyan) !important; }
+    .exchange-glance { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
+    .glance { min-width: 0; border-top: 2px solid var(--cyan); }
+    .glance-meta { color: var(--muted); font-size: 0.78rem; line-height: 1.6; margin-top: 8px; overflow-wrap: anywhere; }
+    .ro-box { margin-top: 10px; padding: 8px 10px; background: var(--panel-2); border: 1px solid rgba(255, 184, 0, 0.28); border-radius: 8px; }
+    .ro-assets { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+    .ro-chip { font-size: 0.72rem; font-family: monospace; padding: 2px 7px; border-radius: 6px; background: rgba(255, 184, 0, 0.08); border: 1px solid rgba(255, 184, 0, 0.3); color: #fde68a; }
     .grid-main {
-      display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr));
       gap: 16px; margin-bottom: 16px;
     }
     h2 {
-      font-size: 0.9rem; text-transform: uppercase; letter-spacing: 0.08em;
-      color: var(--cyan); margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center;
+      font-size: 0.88rem; text-transform: uppercase; letter-spacing: 0.07em;
+      color: var(--cyan); margin-bottom: 10px; display: flex; flex-wrap: wrap;
+      justify-content: space-between; align-items: center; gap: 8px;
     }
-    table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
-    th, td { text-align: left; padding: 7px 6px; border-bottom: 1px solid rgba(31, 43, 77, 0.6); }
-    th { color: var(--muted); font-size: 0.72rem; text-transform: uppercase; }
-    .scroll-x { overflow-x: auto; max-height: 320px; overflow-y: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
+    th, td { text-align: left; padding: 7px 6px; border-bottom: 1px solid rgba(31, 43, 77, 0.6); white-space: nowrap; }
+    th { color: var(--muted); font-size: 0.7rem; text-transform: uppercase; position: sticky; top: 0; background: var(--panel); z-index: 1; }
+    .clickable-row { cursor: pointer; transition: background-color 0.15s ease; }
+    .clickable-row:hover { background: rgba(0, 240, 255, 0.08); }
+    .scroll-x { overflow-x: auto; max-height: 320px; overflow-y: auto; -webkit-overflow-scrolling: touch; }
     .pos { color: var(--green); }
     .neg { color: var(--red); }
-    .tag { padding: 2px 7px; border-radius: 6px; font-size: 0.7rem; font-weight: 700; background: var(--panel-2); }
-    .chart-controls { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+    .warn { color: var(--amber); }
+    .tag { padding: 2px 7px; border-radius: 6px; font-size: 0.68rem; font-weight: 700; background: var(--panel-2); border: 1px solid var(--border); display: inline-block; }
+    .chart-controls { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; align-items: center; }
     select {
       background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
-      border-radius: 6px; padding: 5px 8px; font-size: 0.8rem;
+      border-radius: 6px; padding: 6px 9px; min-height: 36px; font-size: 0.8rem;
     }
-    canvas { width: 100%; height: 210px; background: #090d1c; border-radius: 8px; border: 1px solid var(--border); }
+    .chart-meta-strip {
+      display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px;
+      font-size: 0.73rem; padding: 7px 10px; margin-bottom: 8px;
+      background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px;
+    }
+    .ohlcv-strip {
+      display: flex; flex-wrap: wrap; gap: 10px; font-size: 0.73rem; font-family: monospace;
+      color: var(--muted); margin-bottom: 8px; min-height: 18px;
+    }
+    .chart-wrap { position: relative; width: 100%; height: 280px; }
+    canvas#price-canvas {
+      display: block; width: 100%; height: 100%; background: #090d1c;
+      border-radius: 8px; border: 1px solid var(--border); touch-action: pan-y;
+    }
+    .chart-overlay-msg {
+      position: absolute; inset: 0; display: none; align-items: center; justify-content: center;
+      flex-direction: column; gap: 8px; background: rgba(7, 9, 19, 0.78); border-radius: 8px;
+      font-size: 0.8rem; text-align: center; padding: 16px;
+    }
     .section-full { margin-bottom: 16px; }
     .pill-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 10px; }
-    .pill-readonly { color: var(--amber); background: rgba(255, 184, 0, 0.1); border: 1px solid rgba(255, 184, 0, 0.45); padding: 3px 8px; border-radius: 999px; font-size: 0.7rem; font-weight: 700; }
-    .pill-ok { color: var(--green); background: rgba(0, 255, 157, 0.08); border: 1px solid rgba(0, 255, 157, 0.45); padding: 3px 8px; border-radius: 999px; font-size: 0.7rem; font-weight: 700; }
-    .pill-err { color: var(--red); background: rgba(255, 68, 102, 0.12); border: 1px solid rgba(255, 68, 102, 0.45); padding: 3px 8px; border-radius: 999px; font-size: 0.7rem; font-weight: 700; }
-    .wallet-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
-    .wallet-box { background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px; padding: 12px; }
+    .pill-paper { color: var(--green); background: rgba(0, 255, 157, 0.08); border: 1px solid rgba(0, 255, 157, 0.45); padding: 3px 8px; border-radius: 999px; font-size: 0.68rem; font-weight: 700; }
+    .pill-readonly { color: var(--amber); background: rgba(255, 184, 0, 0.1); border: 1px solid rgba(255, 184, 0, 0.45); padding: 3px 8px; border-radius: 999px; font-size: 0.68rem; font-weight: 700; }
+    .pill-ok { color: var(--green); background: rgba(0, 255, 157, 0.08); border: 1px solid rgba(0, 255, 157, 0.45); padding: 3px 8px; border-radius: 999px; font-size: 0.68rem; font-weight: 700; }
+    .pill-err { color: var(--red); background: rgba(255, 68, 102, 0.12); border: 1px solid rgba(255, 68, 102, 0.45); padding: 3px 8px; border-radius: 999px; font-size: 0.68rem; font-weight: 700; }
+    .pill-stale { color: var(--amber); background: rgba(255, 184, 0, 0.16); border: 1px solid var(--amber); padding: 3px 8px; border-radius: 999px; font-size: 0.68rem; font-weight: 700; }
+    .wallet-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 12px; }
+    .wallet-box { background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px; padding: 12px; min-width: 0; }
     .mono-addr { font-family: monospace; font-size: 0.78rem; color: var(--cyan); word-break: break-all; }
-    .btn-disabled, .btn:disabled { opacity: 0.45; cursor: not-allowed; border-color: var(--border); color: var(--muted); }
-    .btn-disabled:hover, .btn:disabled:hover { background: var(--panel-2); }
-    .treasury-kpi { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 12px; }
-    .agent-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(195px, 1fr)); gap: 10px; margin-top: 10px; }
+    .treasury-kpi { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr)); gap: 10px; margin-bottom: 12px; }
+    .agent-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px; margin-top: 10px; }
     .agent-card { background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px; padding: 10px; font-size: 0.76rem; }
     .agent-card.active { border-color: rgba(0, 255, 157, 0.45); }
     .agent-card.paused, .agent-card.disabled { opacity: 0.7; }
     .muted-note { color: var(--muted); font-size: 0.75rem; line-height: 1.5; }
-    .btn:focus-visible, a:focus-visible, select:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+    .empty-row { text-align: center; color: var(--muted); padding: 18px 8px; font-style: italic; }
+    .btn:focus-visible, .tab-btn:focus-visible, a:focus-visible, select:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+    .hidden-section { display: none !important; }
     @media (max-width: 1024px) {
       .exchange-glance { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .chart-wrap { height: 250px; }
     }
-    @media (max-width: 768px) {
+    @media (max-width: 680px) {
       .grid-main { grid-template-columns: 1fr; }
       .exchange-glance { grid-template-columns: 1fr; }
-      .agent-grid { grid-template-columns: repeat(auto-fill, minmax(155px, 1fr)); }
+      .agent-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+      .chart-wrap { height: 220px; }
       body { padding: 10px; }
+      .card { padding: 12px; }
+      .kpi-val { font-size: 1.15rem; }
     }
   </style>
 </head>
 <body>
-  <div class="header">
+  <header class="header">
     <div>
       <div class="brand">NEON QUANT // BINANCE · OKX · BYBIT</div>
-      <div style="font-size:0.75rem;color:var(--muted);margin-top:3px;" id="last-update">Initializing telemetry...</div>
+      <div style="font-size:0.75rem;color:var(--muted);margin-top:3px;" id="last-update" aria-live="polite">Initializing telemetry...</div>
     </div>
     <div class="badges">
-      {% if google_enabled %}<a class="btn" href="/auth/google">Sign in with Google</a><button class="btn" onclick="fetch('/auth/logout',{method:'POST'}).then(()=>location.reload())">Sign out</button>{% endif %}
+      {% if google_enabled %}<a class="btn" href="/auth/google">Sign in with Google</a><button class="btn" onclick="logoutDashboard()">Sign out</button>{% endif %}
+      <span class="pill-ok" id="conn-health-badge">CONNECTING…</span>
       <span class="badge badge-paper" id="badge-mode">MODE: PAPER_ONLY</span>
       <span class="badge badge-locked" id="badge-live">LIVE EXECUTION: DISABLED</span>
-      <button class="btn" onclick="triggerScan()">SCAN NOW</button>
+      <button class="btn" id="btn-scan" onclick="triggerScan()">SCAN NOW</button>
       <button class="btn btn-danger" id="btn-estop" onclick="toggleEmergencyStop()">EMERGENCY STOP</button>
+    </div>
+  </header>
+
+  <div class="error-banner" id="state-error-banner" role="alert">
+    <span id="state-error-text">Unable to refresh dashboard telemetry.</span>
+    <button class="btn btn-sm" onclick="fetchState(true)">RETRY NOW</button>
+  </div>
+
+  <nav class="nav-tabs" aria-label="Dashboard sections">
+    <button class="tab-btn active" data-tab="all" onclick="setSectionTab('all', this)">All Panels</button>
+    <button class="tab-btn" data-tab="markets" onclick="setSectionTab('markets', this)">Markets &amp; Chart</button>
+    <button class="tab-btn" data-tab="positions" onclick="setSectionTab('positions', this)">Positions &amp; Bots</button>
+    <button class="tab-btn" data-tab="treasury" onclick="setSectionTab('treasury', this)">Treasury &amp; Wallets</button>
+    <a class="btn btn-sm" style="text-decoration:none;margin-left:auto;" href="/aurora">Aurora V7 Terminal ↗</a>
+  </nav>
+
+  <section class="grid-kpi" data-section-group="all markets positions" aria-label="Paper portfolio key metrics">
+    <div class="card">
+      <div class="kpi-label"><span>Paper Equity</span><span class="pill-paper">PAPER</span></div>
+      <div class="kpi-val" id="kpi-equity">$0.00</div>
+      <div class="kpi-sub" id="kpi-equity-sub">Initial: $—</div>
+    </div>
+    <div class="card">
+      <div class="kpi-label"><span>Paper Realized PnL</span><span class="pill-paper">PAPER</span></div>
+      <div class="kpi-val" id="kpi-realized">$0.00</div>
+      <div class="kpi-sub">Closed trades &amp; fees</div>
+    </div>
+    <div class="card">
+      <div class="kpi-label"><span>Paper Unrealized PnL</span><span class="pill-paper">PAPER</span></div>
+      <div class="kpi-val" id="kpi-unrealized">$0.00</div>
+      <div class="kpi-sub">Open mark-to-market</div>
+    </div>
+    <div class="card">
+      <div class="kpi-label"><span>Total Paper PnL</span><span class="pill-paper">PAPER</span></div>
+      <div class="kpi-val" id="kpi-pnl">$0.00</div>
+      <div class="kpi-sub" id="kpi-pnl-sub">Free cash: $—</div>
+    </div>
+    <div class="card">
+      <div class="kpi-label"><span>Risk Exposure</span><span class="pill-paper">PAPER</span></div>
+      <div class="kpi-val" id="kpi-exp">0.0%</div>
+      <div class="kpi-sub" id="kpi-exp-sub">$0.00 notional</div>
+    </div>
+    <div class="card">
+      <div class="kpi-label"><span>Drawdown (vs HWM)</span><span class="pill-paper">RISK</span></div>
+      <div class="kpi-val" id="kpi-dd">0.00%</div>
+      <div class="kpi-sub" id="kpi-dd-sub">HWM: $— · Limit: —%</div>
+    </div>
+    <div class="card">
+      <div class="kpi-label"><span>Open Pos / Signals</span><span class="pill-paper">PAPER</span></div>
+      <div class="kpi-val"><span id="kpi-pos">0</span> / <span id="kpi-sig">0</span></div>
+      <div class="kpi-sub" id="kpi-cb-sub">Circuit: NOMINAL</div>
+    </div>
+  </section>
+
+  <section class="exchange-glance" data-section-group="all markets" aria-label="Three exchange overview">
+    <div class="card glance" id="glance-binance">
+      <h2>BINANCE <span class="badge" id="g-binance-status">Checking</span></h2>
+      <div class="pill-row" style="margin-bottom:6px;">
+        <span class="pill-paper">PAPER BOTS &amp; FEED</span>
+        <span class="pill-readonly" id="g-binance-ro-badge">EXCHANGE READ-ONLY</span>
+      </div>
+      <div class="kpi-val" id="g-binance-markets">—</div>
+      <div class="kpi-label">Scanned markets · <span id="g-binance-age">age —</span></div>
+      <div class="glance-meta" id="g-binance-detail">Loading…</div>
+      <div class="ro-box" id="g-binance-ro">Loading read-only balances…</div>
+    </div>
+
+    <div class="card glance" id="glance-okx">
+      <h2>OKX <span class="badge" id="g-okx-status">Checking</span></h2>
+      <div class="pill-row" style="margin-bottom:6px;">
+        <span class="pill-paper">PAPER BOTS &amp; FEED</span>
+        <span class="pill-readonly" id="g-okx-ro-badge">EXCHANGE READ-ONLY</span>
+      </div>
+      <div class="kpi-val" id="g-okx-markets">—</div>
+      <div class="kpi-label">Scanned markets · <span id="g-okx-age">age —</span></div>
+      <div class="glance-meta" id="g-okx-detail">Loading…</div>
+      <div class="ro-box" id="g-okx-ro">Loading read-only balances…</div>
+    </div>
+
+    <div class="card glance" id="glance-bybit">
+      <h2>BYBIT <span class="badge" id="g-bybit-status">Checking</span></h2>
+      <div class="pill-row" style="margin-bottom:6px;">
+        <span class="pill-paper">PAPER BOTS &amp; FEED</span>
+        <span class="pill-readonly" id="g-bybit-ro-badge">EXCHANGE READ-ONLY</span>
+      </div>
+      <div class="kpi-val" id="g-bybit-markets">—</div>
+      <div class="kpi-label">Scanned markets · <span id="g-bybit-age">age —</span></div>
+      <div class="glance-meta" id="g-bybit-detail">Loading…</div>
+      <div class="ro-box" id="g-bybit-ro">Loading read-only balances…</div>
+    </div>
+  </section>
+
+  <div class="grid-main" data-section-group="all markets">
+    <div class="card" style="grid-column: 1 / -1;">
+      <h2>
+        <span>Real-Time Multi-Exchange Market Chart</span>
+        <span class="pill-row" style="margin-bottom:0;">
+          <span class="pill-readonly" id="chart-meta-badge">OKX · BTC/USDT · SPOT · 15m</span>
+          <span class="pill-ok" id="chart-source-badge">SOURCE: —</span>
+          <span class="pill-ok" id="chart-health-badge">FEED: CONNECTING</span>
+        </span>
+      </h2>
+      <div class="chart-controls">
+        <select id="sel-ex" aria-label="Exchange" onchange="onChartControlChange()">
+          <option value="okx">OKX</option>
+          <option value="bybit">Bybit</option>
+          <option value="binance">Binance</option>
+        </select>
+        <select id="sel-mtype" aria-label="Market type" onchange="onChartControlChange()">
+          <option value="spot" selected>Spot</option>
+          <option value="perp">Perp</option>
+        </select>
+        <select id="sel-sym" aria-label="Trading pair" onchange="onChartControlChange()">
+          <option value="BTC/USDT">BTC/USDT</option>
+          <option value="ETH/USDT">ETH/USDT</option>
+          <option value="SOL/USDT">SOL/USDT</option>
+        </select>
+        <select id="sel-tf" aria-label="Timeframe" onchange="onChartControlChange()">
+          <option value="1m">1m</option>
+          <option value="5m">5m</option>
+          <option value="15m" selected>15m</option>
+          <option value="1h">1h</option>
+          <option value="4h">4h</option>
+          <option value="1d">1d</option>
+        </select>
+        <button class="btn btn-sm btn-active" id="btn-ema" onclick="toggleChartOverlay('ema', this)">EMA 9/21</button>
+        <button class="btn btn-sm btn-active" id="btn-vol" onclick="toggleChartOverlay('vol', this)">VOL</button>
+        <button class="btn btn-sm btn-active" id="btn-auto-chart" onclick="toggleChartAutoRefresh(this)">AUTO 6s: ON</button>
+        <button class="btn btn-sm" id="btn-refresh-chart" onclick="loadChart({incremental:false, force:true})">REFRESH</button>
+      </div>
+      <div class="chart-meta-strip">
+        <span id="chart-last-success">Last candle update: pending…</span>
+        <span id="chart-retry-status" class="muted-note">Auto-refresh every 6s when tab visible</span>
+      </div>
+      <div class="ohlcv-strip" id="chart-ohlcv">Loading OHLCV series…</div>
+      <div class="chart-wrap">
+        <canvas id="price-canvas" aria-label="Live candlestick chart"></canvas>
+        <div class="chart-overlay-msg" id="chart-overlay">
+          <div id="chart-overlay-text">Loading live candles…</div>
+          <button class="btn btn-sm" onclick="loadChart({incremental:false, force:true})">RETRY NOW</button>
+        </div>
+      </div>
     </div>
   </div>
 
-  <div class="grid-kpi">
-    <div class="card"><div class="kpi-label">Paper Equity</div><div class="kpi-val" id="kpi-equity">$0.00</div></div>
-    <div class="card"><div class="kpi-label">Paper PnL</div><div class="kpi-val" id="kpi-pnl">$0.00</div></div>
-    <div class="card"><div class="kpi-label">Portfolio Exposure</div><div class="kpi-val" id="kpi-exp">0.0%</div></div>
-    <div class="card"><div class="kpi-label">Open Positions</div><div class="kpi-val" id="kpi-pos">0</div></div>
-    <div class="card"><div class="kpi-label">Active Signals</div><div class="kpi-val" id="kpi-sig">0</div></div>
-  </div>
-
-  <section class="exchange-glance" aria-label="Three exchange overview">
-    <div class="card glance" id="glance-binance"><h2>BINANCE <span class="badge" id="g-binance-status">Checking</span></h2><div class="kpi-val" id="g-binance-markets">—</div><div class="kpi-label">Scanned markets</div><div class="glance-meta" id="g-binance-detail">Loading…</div></div>
-    <div class="card glance" id="glance-okx"><h2>OKX <span class="badge" id="g-okx-status">Checking</span></h2><div class="kpi-val" id="g-okx-markets">—</div><div class="kpi-label">Scanned markets</div><div class="glance-meta" id="g-okx-detail">Loading…</div></div>
-    <div class="card glance" id="glance-bybit"><h2>BYBIT <span class="badge" id="g-bybit-status">Checking</span></h2><div class="kpi-val" id="g-bybit-markets">—</div><div class="kpi-label">Scanned markets</div><div class="glance-meta" id="g-bybit-detail">Loading…</div></div>
+  <section class="card section-full" data-section-group="all positions" aria-label="Open Paper Positions and Stop-Loss / Take-Profit Status">
+    <h2>
+      <span>Open Paper Positions &amp; Stop-Loss / Take-Profit</span>
+      <span class="pill-paper">PAPER / SIMULATED DATA</span>
+    </h2>
+    <div class="scroll-x">
+      <table>
+        <thead>
+          <tr>
+            <th>Bot</th><th>Ex</th><th>Symbol</th><th>Type</th><th>Side</th>
+            <th>Qty</th><th>Entry</th><th>Mark</th><th>Lev</th>
+            <th>Unrealized PnL</th><th>Stop-Loss</th><th>Take-Profit</th><th>SL/TP Status</th>
+          </tr>
+        </thead>
+        <tbody id="tbl-positions">
+          <tr><td colspan="13" class="empty-row">Loading paper positions…</td></tr>
+        </tbody>
+      </table>
+    </div>
   </section>
 
-  <section class="card section-full" aria-label="Phantom Solana Watch-Only Wallet">
+  <div class="grid-main" data-section-group="all markets">
+    <div class="card">
+      <h2>
+        <span>Exchange Connection &amp; Readiness</span>
+        <span class="pill-readonly">FEED &amp; AUTH TELEMETRY</span>
+      </h2>
+      <div class="scroll-x">
+        <table>
+          <thead><tr><th>Exchange</th><th>Health</th><th>Auth</th><th>Last OK</th><th>Errors</th><th>Read-Only</th></tr></thead>
+          <tbody id="tbl-exchanges"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>
+        <span>Global Scanner (Click row to chart)</span>
+        <span class="pill-readonly" id="scanner-fresh-badge">LIVE MARKET DATA</span>
+      </h2>
+      <div class="scroll-x">
+        <table>
+          <thead><tr><th>Ex</th><th>Symbol</th><th>Type</th><th>Price</th><th>RSI</th><th>Regime</th><th>Score</th></tr></thead>
+          <tbody id="tbl-scanner"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid-main" data-section-group="all markets positions">
+    <div class="card">
+      <h2>
+        <span>AI Strategy Signals (Click row to chart)</span>
+        <span class="pill-paper">PAPER SIGNALS</span>
+      </h2>
+      <div class="scroll-x">
+        <table>
+          <thead><tr><th>Strategy</th><th>Ex</th><th>Symbol</th><th>Dir</th><th>SL / TP</th><th>R:R</th><th>Conf</th></tr></thead>
+          <tbody id="tbl-signals"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>
+        <span>Paper Bot Manager</span>
+        <span class="pill-paper">PAPER EXECUTION</span>
+      </h2>
+      <div class="scroll-x">
+        <table>
+          <thead><tr><th>Bot</th><th>Ex</th><th>Type</th><th>State</th><th>Cash</th><th>Realized</th><th>Pos</th><th>Action</th></tr></thead>
+          <tbody id="tbl-bots"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <section class="card section-full" data-section-group="all positions" aria-label="Paper Orders, Fills, and Risk Alerts">
+    <h2>
+      <span>Paper Orders, Fills &amp; Risk Alerts</span>
+      <span class="pill-row" style="margin-bottom:0;">
+        <button class="btn btn-sm btn-active" id="tab-orders" onclick="setActivityTab('orders', this)">Orders</button>
+        <button class="btn btn-sm" id="tab-fills" onclick="setActivityTab('fills', this)">Fills</button>
+        <button class="btn btn-sm" id="tab-alerts" onclick="setActivityTab('alerts', this)">Risk Alerts</button>
+        <span class="pill-paper">PAPER / SIMULATED DATA</span>
+      </span>
+    </h2>
+    <div class="scroll-x">
+      <table id="tbl-activity-wrap">
+        <thead id="tbl-activity-head"></thead>
+        <tbody id="tbl-activity-body"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="card section-full" data-section-group="all treasury" aria-label="Phantom Solana Watch-Only Wallet">
     <h2>
       <span>Phantom Watch-Only Wallet (Solana Mainnet)</span>
       <span style="display:flex;gap:6px;flex-wrap:wrap;">
-        <button class="btn" onclick="refreshWatchOnlyWallet()">REFRESH RPC</button>
-        <button class="btn btn-disabled" disabled aria-disabled="true" title="Signing permanently disabled">SIGN (DISABLED)</button>
-        <button class="btn btn-disabled" disabled aria-disabled="true" title="Transfers permanently disabled">TRANSFER (DISABLED)</button>
+        <button class="btn btn-sm" onclick="refreshWatchOnlyWallet()">REFRESH RPC</button>
+        <button class="btn btn-sm btn-disabled" disabled aria-disabled="true" title="Signing permanently disabled">SIGN (DISABLED)</button>
+        <button class="btn btn-sm btn-disabled" disabled aria-disabled="true" title="Transfers permanently disabled">TRANSFER (DISABLED)</button>
       </span>
     </h2>
     <div class="pill-row">
@@ -161,21 +441,21 @@
     </div>
   </section>
 
-  <section class="card section-full" aria-label="Unified 18-Agent Paper Treasury">
+  <section class="card section-full" data-section-group="all treasury" aria-label="Unified 18-Agent Paper Treasury">
     <h2>
       <span>Unified 18-Agent Paper Treasury (Single Master Pool)</span>
       <span style="display:flex;gap:6px;flex-wrap:wrap;">
         <span class="badge badge-paper" id="treasury-flag-badge">STATUS: CHECKING</span>
-        <button class="btn btn-disabled" disabled aria-disabled="true" title="Live orders permanently disabled">LIVE ORDER (DISABLED)</button>
-        <button class="btn btn-disabled" disabled aria-disabled="true" title="Withdrawals permanently disabled">WITHDRAW (DISABLED)</button>
+        <button class="btn btn-sm btn-disabled" disabled aria-disabled="true" title="Live orders permanently disabled">LIVE ORDER (DISABLED)</button>
+        <button class="btn btn-sm btn-disabled" disabled aria-disabled="true" title="Withdrawals permanently disabled">WITHDRAW (DISABLED)</button>
       </span>
     </h2>
     <div class="pill-row">
-      <span class="pill-readonly">PAPER_ONLY · NO LIVE EXECUTION</span>
+      <span class="pill-paper">PAPER / SIMULATED DATA</span>
       <span class="pill-readonly">NO EXTERNAL TRANSFERS</span>
       <span class="pill-ok" id="treasury-recon-badge">RECONCILIATION: —</span>
       <span class="muted-note" id="treasury-fx-note"></span>
-      <div class="muted-note" id="treasury-pnl-audit" role="status" style="margin-top:10px;line-height:1.6;">Loading paper P&amp;L audit…</div>
+      <div class="muted-note" id="treasury-pnl-audit" role="status" style="width:100%;margin-top:6px;line-height:1.5;">Loading paper P&amp;L audit…</div>
     </div>
     <div id="treasury-disabled-note" class="muted-note" style="display:none;padding:10px;background:var(--panel-2);border-radius:8px;border:1px solid var(--border);">
       Unified 18-Agent Treasury is currently disabled by feature flag (<code>UNIFIED_TREASURY_ENABLED=false</code>). Paper bots continue operating on the v1 paper ledger.
@@ -184,7 +464,7 @@
       <div class="treasury-kpi" id="treasury-kpis"></div>
       <div class="grid-main" style="margin-bottom:10px;">
         <div class="wallet-box">
-          <div class="kpi-label" style="margin-bottom:6px;">Exchange Paper Attribution vs Read-Only Exchange Balances</div>
+          <div class="kpi-label" style="margin-bottom:6px;">Paper Attribution vs Read-Only Exchange Status</div>
           <div class="scroll-x" style="max-height:190px;">
             <table>
               <thead><tr><th>Exchange</th><th>Scope</th><th>Net Paper PnL</th><th>Read-Only Status</th></tr></thead>
@@ -202,160 +482,48 @@
     </div>
   </section>
 
-  <div class="grid-main">
-    <div class="card">
-      <h2>Exchange Connection &amp; Readiness</h2>
-      <div class="scroll-x">
-        <table>
-          <thead><tr><th>Exchange</th><th>Health</th><th>Auth</th><th>Errors</th><th>Read-Only</th></tr></thead>
-          <tbody id="tbl-exchanges"></tbody>
-        </table>
-      </div>
-    </div>
-
-    <div class="card">
-      <h2>Multi-Timeframe Chart</h2>
-      <div class="chart-controls">
-        <select id="sel-ex" onchange="loadChart()"><option value="okx">OKX</option><option value="bybit">Bybit</option><option value="binance">Binance</option></select>
-        <select id="sel-sym" onchange="loadChart()"><option value="BTC/USDT">BTC/USDT</option><option value="ETH/USDT">ETH/USDT</option><option value="SOL/USDT">SOL/USDT</option></select>
-        <select id="sel-tf" onchange="loadChart()"><option value="1m">1m</option><option value="5m">5m</option><option value="15m" selected>15m</option><option value="1h">1h</option><option value="4h">4h</option><option value="1d">1d</option></select>
-      </div>
-      <canvas id="price-canvas" width="600" height="210"></canvas>
-    </div>
-  </div>
-
-  <div class="grid-main">
-    <div class="card">
-      <h2>Global Scanner &amp; Ranked Opportunities</h2>
-      <div class="scroll-x">
-        <table>
-          <thead><tr><th>Ex</th><th>Symbol</th><th>Type</th><th>Price</th><th>RSI</th><th>Regime</th><th>Score</th></tr></thead>
-          <tbody id="tbl-scanner"></tbody>
-        </table>
-      </div>
-    </div>
-
-    <div class="card">
-      <h2>AI Strategy Signals</h2>
-      <div class="scroll-x">
-        <table>
-          <thead><tr><th>Strategy</th><th>Ex</th><th>Symbol</th><th>Dir</th><th>R:R</th><th>Conf</th></tr></thead>
-          <tbody id="tbl-signals"></tbody>
-        </table>
-      </div>
-    </div>
-  </div>
-
-  <div class="grid-main">
-    <div class="card">
-      <h2>Paper Bot Manager</h2>
-      <div class="scroll-x">
-        <table>
-          <thead><tr><th>Bot</th><th>Ex</th><th>Cash</th><th>Realized</th><th>Pos</th><th>Action</th></tr></thead>
-          <tbody id="tbl-bots"></tbody>
-        </table>
-      </div>
-    </div>
-
-    <div class="card">
-      <h2>Risk Alerts &amp; Recent Paper Orders</h2>
-      <div class="scroll-x">
-        <table>
-          <thead><tr><th>Time / Bot</th><th>Symbol</th><th>Side</th><th>Status</th><th>Price / Reason</th></tr></thead>
-          <tbody id="tbl-orders"></tbody>
-        </table>
-      </div>
-    </div>
-  </div>
-
   <script>
+    const STATE_REFRESH_MS = 10000;
+    const CHART_BASE_REFRESH_MS = 6000;
+    const CHART_MAX_BACKOFF_MS = 30000;
+    const CHART_STALE_THRESHOLD_SEC = 20;
+    const READONLY_STALE_THRESHOLD_SEC = 300;
+
     let estopActive = false;
+    let latestState = null;
+    let stateInFlight = false;
+    let stateAbortCtrl = null;
+    let auditAbortCtrl = null;
+    let lastStateSuccessMs = 0;
+    let activityTab = 'orders';
 
-    async function fetchState() {
-      const res = await fetch('/api/state');
-      if (!res.ok) return;
-      const d = await res.json();
-      document.getElementById('last-update').textContent =
-        `Cycle #${d.cycle_count} | Last scan: ${d.last_cycle_at || 'pending'} | Reconciled: ${d.reconciliation.reconciled}`;
-      document.getElementById('kpi-equity').textContent = `$${d.portfolio.total_equity_usd.toLocaleString()}`;
-      const pnlEl = document.getElementById('kpi-pnl');
-      pnlEl.textContent = `$${d.portfolio.total_pnl_usd.toFixed(2)} (${d.portfolio.total_pnl_pct}%)`;
-      pnlEl.className = 'kpi-val ' + (d.portfolio.total_pnl_usd >= 0 ? 'pos' : 'neg');
-      document.getElementById('kpi-exp').textContent = `${(d.risk.portfolio_exposure_pct * 100).toFixed(1)}%`;
-      document.getElementById('kpi-pos').textContent = d.portfolio.open_positions.length;
-      document.getElementById('kpi-sig').textContent = d.signals.length;
+    const domSigCache = new Map();
 
-      const auths = d.auth_verification || {};
-      for (const ex of ['binance', 'okx', 'bybit']) {
-        const status = (d.exchanges || []).find(e => e.exchange === ex);
-        const auth = auths[ex] || {};
-        const snaps = (d.scanner || []).filter(s => s.exchange === ex);
-        const bots = (d.bots || []).filter(b => b.exchange === ex);
-        const positions = (d.portfolio?.open_positions || []).filter(p => p.exchange === ex);
-        const healthy = status?.healthy === true;
-        document.getElementById('g-' + ex + '-status').textContent = healthy ? 'FEED ONLINE' : 'CHECK FEED';
-        document.getElementById('g-' + ex + '-status').style.color = healthy ? 'var(--green)' : 'var(--amber)';
-        document.getElementById('g-' + ex + '-markets').textContent = snaps.length;
-        document.getElementById('g-' + ex + '-detail').textContent =
-          'Auth: ' + (auth.status || 'pending') + ' · Assets: ' + (auth.asset_count ?? '—') +
-          ' · Paper bots: ' + bots.filter(b => b.enabled).length + '/' + bots.length +
-          ' · Open paper positions: ' + positions.length +
-          ' · Errors: ' + (status?.consecutive_errors ?? '—');
-      }
-      estopActive = d.risk.emergency_stop_active;
-      const btnStop = document.getElementById('btn-estop');
-      btnStop.textContent = estopActive ? 'RESET STOP' : 'EMERGENCY STOP';
-
-      document.getElementById('tbl-exchanges').innerHTML = d.exchanges.map(e => {
-        const auth = (d.auth_verification[e.exchange] || {}).status || (e.credentials_configured ? 'configured' : 'public');
-        return `<tr>
-          <td><strong>${e.exchange.toUpperCase()}</strong></td>
-          <td class="${e.healthy ? 'pos' : 'neg'}">${e.healthy ? 'ONLINE' : 'DEGRADED'}</td>
-          <td>${auth}</td>
-          <td>${e.consecutive_errors}</td>
-          <td>${e.read_only_enforced ? 'LOCKED' : 'ERR'}</td>
-        </tr>`;
-      }).join('');
-
-      document.getElementById('tbl-scanner').innerHTML = d.scanner.map(s => `<tr>
-        <td>${s.exchange.toUpperCase()}</td>
-        <td><strong>${s.symbol}</strong></td>
-        <td><span class="tag">${s.market_type}</span></td>
-        <td>${Number(s.last_price).toFixed(4)}</td>
-        <td>${s.rsi}</td>
-        <td>${s.regime}</td>
-        <td class="pos">${s.opportunity_score}</td>
-      </tr>`).join('');
-
-      document.getElementById('tbl-signals').innerHTML = d.signals.map(s => `<tr>
-        <td>${s.strategy_name}</td>
-        <td>${s.exchange.toUpperCase()}</td>
-        <td>${s.symbol}</td>
-        <td class="${s.direction === 'long' ? 'pos' : 'neg'}">${s.direction.toUpperCase()}</td>
-        <td>${s.risk_reward_ratio}</td>
-        <td>${(s.confidence_score * 100).toFixed(1)}%</td>
-      </tr>`).join('');
-
-      document.getElementById('tbl-bots').innerHTML = d.bots.map(b => `<tr>
-        <td>${b.name}</td>
-        <td>${b.exchange.toUpperCase()}</td>
-        <td>$${b.cash_usd}</td>
-        <td class="${b.realized_pnl_usd >= 0 ? 'pos' : 'neg'}">$${b.realized_pnl_usd}</td>
-        <td>${b.open_positions}</td>
-        <td><button class="btn" onclick="toggleBot('${b.bot_id}', ${!b.enabled})">${b.enabled ? 'PAUSE' : 'START'}</button></td>
-      </tr>`).join('');
-
-      document.getElementById('tbl-orders').innerHTML = d.orders.slice(0, 20).map(o => `<tr>
-        <td>${o.bot_id}</td>
-        <td>${o.symbol}</td>
-        <td>${o.side.toUpperCase()}</td>
-        <td><span class="tag">${o.status}</span></td>
-        <td>${o.avg_fill_price || o.reject_reason || '-'}</td>
-      </tr>`).join('');
-
-      renderWatchOnlyWallets(d.watch_only_wallets);
-      renderUnifiedTreasury(d.unified_treasury);
-    }
+    // Chart engine state
+    const chartState = {
+      exchange: 'okx',
+      marketType: 'spot',
+      symbol: 'BTC/USDT',
+      timeframe: '15m',
+      candlesByTs: new Map(),
+      orderedCandles: [],
+      source: '—',
+      exchangeHealthy: true,
+      lastSuccessMs: 0,
+      lastSuccessIso: '',
+      inFlight: false,
+      abortCtrl: null,
+      reqSeq: 0,
+      autoEnabled: true,
+      timerId: null,
+      backoffMs: CHART_BASE_REFRESH_MS,
+      errorMsg: null,
+      showEma: true,
+      showVol: true,
+      hoverIdx: -1,
+      drawScheduled: false,
+      layout: null,
+    };
 
     function escapeHtml(val) {
       return String(val ?? '')
@@ -363,8 +531,410 @@
         .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
     }
 
+    function fmtUsd(val, signed = false) {
+      const n = Number(val || 0);
+      const abs = Math.abs(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      if (signed) return (n >= 0 ? '+$' : '-$') + abs;
+      return (n < 0 ? '-$' : '$') + abs;
+    }
+
+    function fmtPrice(val) {
+      const n = Number(val || 0);
+      if (!Number.isFinite(n)) return '—';
+      if (Math.abs(n) >= 1000) return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      if (Math.abs(n) >= 1) return n.toFixed(4);
+      return n.toFixed(6);
+    }
+
+    function fmtAge(sec) {
+      if (sec === null || sec === undefined || !Number.isFinite(Number(sec))) return '—';
+      const s = Math.max(0, Math.round(Number(sec)));
+      if (s < 60) return `${s}s ago`;
+      const m = Math.floor(s / 60);
+      if (m < 60) return `${m}m ${s % 60}s ago`;
+      return `${Math.floor(m / 60)}h ${m % 60}m ago`;
+    }
+
+    function isoAgeSec(isoOrEpoch) {
+      if (!isoOrEpoch) return null;
+      const ms = typeof isoOrEpoch === 'number'
+        ? (isoOrEpoch > 1e12 ? isoOrEpoch : isoOrEpoch * 1000)
+        : Date.parse(isoOrEpoch);
+      if (!Number.isFinite(ms)) return null;
+      return Math.max(0, (Date.now() - ms) / 1000);
+    }
+
+    function setTextDiff(id, text, cls) {
+      const el = document.getElementById(id);
+      if (!el) return;
+      if (el.textContent !== text) {
+        el.textContent = text;
+        el.classList.add('val-flash');
+        setTimeout(() => el.classList.remove('val-flash'), 350);
+      }
+      if (cls !== undefined && el.className !== cls) el.className = cls;
+    }
+
+    function setHtmlDiff(id, html) {
+      const el = document.getElementById(id);
+      if (!el) return;
+      if (domSigCache.get(id) === html) return;
+      domSigCache.set(id, html);
+      el.innerHTML = html;
+    }
+
+    function setSectionTab(tab, btn) {
+      document.querySelectorAll('.nav-tabs .tab-btn').forEach(b => {
+        b.classList.toggle('active', b === btn);
+      });
+      document.querySelectorAll('[data-section-group]').forEach(sec => {
+        const groups = (sec.getAttribute('data-section-group') || '').split(/\s+/);
+        sec.classList.toggle('hidden-section', !groups.includes(tab));
+      });
+      if (tab === 'all' || tab === 'markets') {
+        scheduleChartDraw();
+      }
+    }
+
+    function setActivityTab(tab, btn) {
+      activityTab = tab;
+      ['tab-orders', 'tab-fills', 'tab-alerts'].forEach(id => {
+        const b = document.getElementById(id);
+        if (b) b.classList.toggle('btn-active', b === btn);
+      });
+      if (latestState) renderActivityTable(latestState);
+    }
+
+    function logoutDashboard() {
+      fetch('/auth/logout', { method: 'POST', credentials: 'same-origin' }).then(() => location.reload());
+    }
+
+    async function fetchState(force = false) {
+      if (stateInFlight && !force) return;
+      if (force && stateAbortCtrl) stateAbortCtrl.abort();
+      stateAbortCtrl = new AbortController();
+      stateInFlight = true;
+
+      try {
+        const res = await fetch('/api/state', {
+          cache: 'no-store',
+          credentials: 'same-origin',
+          signal: stateAbortCtrl.signal,
+        });
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}`);
+        }
+        const d = await res.json();
+        latestState = d;
+        lastStateSuccessMs = Date.now();
+        document.getElementById('state-error-banner').style.display = 'none';
+        renderDashboardState(d);
+      } catch (err) {
+        if (err && err.name === 'AbortError') return;
+        const banner = document.getElementById('state-error-banner');
+        document.getElementById('state-error-text').textContent =
+          `Telemetry refresh failed (${err?.message || 'network error'}). Showing last cached state.`;
+        banner.style.display = 'flex';
+        updateConnectionBadges();
+      } finally {
+        stateInFlight = false;
+      }
+    }
+
+    function updateConnectionBadges() {
+      const badge = document.getElementById('conn-health-badge');
+      const stateAge = lastStateSuccessMs ? (Date.now() - lastStateSuccessMs) / 1000 : null;
+      const cycleAge = latestState?.last_cycle_age_sec ?? isoAgeSec(latestState?.last_cycle_at);
+      if (!lastStateSuccessMs) {
+        badge.textContent = 'CONNECTING…';
+        badge.className = 'pill-stale';
+      } else if (stateAge > 30 || (cycleAge !== null && cycleAge > 60)) {
+        badge.textContent = `STALE (${fmtAge(cycleAge ?? stateAge)})`;
+        badge.className = 'pill-stale';
+      } else {
+        badge.textContent = 'LIVE · AUTO 10s';
+        badge.className = 'pill-ok';
+      }
+
+      // Also refresh chart freshness badge if idle
+      updateChartMetaUI();
+    }
+
+    function populateSymbolOptions(pairs) {
+      const sel = document.getElementById('sel-sym');
+      const baseDefaults = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT'];
+      const merged = Array.from(new Set([...baseDefaults, ...(pairs || [])]));
+      const sig = merged.join('|');
+      if (domSigCache.get('sel-sym-opts') === sig) return;
+      domSigCache.set('sel-sym-opts', sig);
+      const current = sel.value || chartState.symbol;
+      sel.innerHTML = merged.map(s => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join('');
+      sel.value = merged.includes(current) ? current : 'BTC/USDT';
+      chartState.symbol = sel.value;
+    }
+
+    function renderDashboardState(d) {
+      const cycleAge = d.last_cycle_age_sec ?? isoAgeSec(d.last_cycle_at);
+      setTextDiff(
+        'last-update',
+        `Cycle #${d.cycle_count} · Last scan: ${fmtAge(cycleAge)} · Synced: ${new Date().toLocaleTimeString()} · Reconciled: ${d.reconciliation?.reconciled}`
+      );
+      updateConnectionBadges();
+      populateSymbolOptions(d.available_pairs || []);
+
+      const port = d.portfolio || {};
+      const risk = d.risk || {};
+      const realized = port.realized_pnl_usd ?? (d.bots || []).reduce((acc, b) => acc + Number(b.realized_pnl_usd || 0), 0);
+      const unrealized = port.unrealized_pnl_usd ?? (port.open_positions || []).reduce((acc, p) => acc + Number(p.unrealized_pnl_usd || 0), 0);
+
+      setTextDiff('kpi-equity', fmtUsd(port.total_equity_usd));
+      setTextDiff('kpi-equity-sub', `Initial: ${fmtUsd(port.initial_equity_usd)}`);
+
+      setTextDiff('kpi-realized', fmtUsd(realized, true), 'kpi-val ' + (realized >= 0 ? 'pos' : 'neg'));
+      setTextDiff('kpi-unrealized', fmtUsd(unrealized, true), 'kpi-val ' + (unrealized >= 0 ? 'pos' : 'neg'));
+
+      const totalPnl = Number(port.total_pnl_usd || 0);
+      setTextDiff(
+        'kpi-pnl',
+        `${fmtUsd(totalPnl, true)} (${Number(port.total_pnl_pct || 0).toFixed(2)}%)`,
+        'kpi-val ' + (totalPnl >= 0 ? 'pos' : 'neg')
+      );
+      setTextDiff('kpi-pnl-sub', `Free cash: ${fmtUsd(port.free_cash_usd ?? port.cash_usd ?? 0)}`);
+
+      setTextDiff('kpi-exp', `${(Number(risk.portfolio_exposure_pct || 0) * 100).toFixed(1)}%`);
+      setTextDiff('kpi-exp-sub', `${fmtUsd(risk.portfolio_exposure_usd || 0)} notional`);
+
+      const ddPct = risk.current_drawdown_pct;
+      setTextDiff('kpi-dd', ddPct !== null && ddPct !== undefined ? `${Number(ddPct).toFixed(2)}%` : '—', 'kpi-val ' + (Number(ddPct || 0) >= (Number(risk.max_drawdown_limit_pct || 10) * 0.7) ? 'neg' : ''));
+      setTextDiff('kpi-dd-sub', `HWM: ${fmtUsd(risk.peak_equity_usd || 0)} · Cap: ${risk.max_drawdown_limit_pct ?? 10}%`);
+
+      setTextDiff('kpi-pos', String((port.open_positions || []).length));
+      setTextDiff('kpi-sig', String((d.signals || []).length));
+      setTextDiff('kpi-cb-sub', risk.emergency_stop_active ? 'EMERGENCY STOP' : (risk.circuit_breaker_tripped ? 'CIRCUIT TRIPPED' : 'Circuit: NOMINAL'));
+
+      estopActive = Boolean(risk.emergency_stop_active);
+      setTextDiff('btn-estop', estopActive ? 'RESET STOP' : 'EMERGENCY STOP');
+
+      // Three Exchange Glance cards
+      const auths = d.auth_verification || {};
+      const roAll = d.readonly_account_snapshots || {};
+      for (const ex of ['binance', 'okx', 'bybit']) {
+        const status = (d.exchanges || []).find(e => e.exchange === ex) || {};
+        const auth = auths[ex] || {};
+        const snaps = (d.scanner || []).filter(s => s.exchange === ex);
+        const bots = (d.bots || []).filter(b => b.exchange === ex);
+        const positions = (port.open_positions || []).filter(p => p.exchange === ex);
+        const lastOkAge = isoAgeSec(status.last_ok_at);
+        const feedStale = lastOkAge !== null && lastOkAge > 45;
+        const healthy = status.healthy === true && !feedStale;
+
+        const stEl = document.getElementById(`g-${ex}-status`);
+        if (status.circuit_open) {
+          stEl.textContent = 'CIRCUIT OPEN';
+          stEl.style.color = 'var(--red)';
+        } else if (!status.healthy) {
+          stEl.textContent = 'DEGRADED';
+          stEl.style.color = 'var(--red)';
+        } else if (feedStale) {
+          stEl.textContent = 'STALE FEED';
+          stEl.style.color = 'var(--amber)';
+        } else {
+          stEl.textContent = 'FEED ONLINE';
+          stEl.style.color = 'var(--green)';
+        }
+
+        setTextDiff(`g-${ex}-markets`, String(snaps.length));
+        setTextDiff(`g-${ex}-age`, `last tick ${fmtAge(lastOkAge)}`);
+        setTextDiff(
+          `g-${ex}-detail`,
+          `Auth: ${auth.status || 'pending'} (${auth.asset_count ?? '—'} assets) · Paper bots: ${bots.filter(b => b.enabled).length}/${bots.length} · Open paper pos: ${positions.length} · Errors: ${status.consecutive_errors ?? 0}`
+        );
+
+        const ro = roAll[ex] || {};
+        const roAge = isoAgeSec(ro.timestamp);
+        const roStale = roAge === null || roAge > READONLY_STALE_THRESHOLD_SEC;
+        const roBadge = document.getElementById(`g-${ex}-ro-badge`);
+        if (ro.status === 'ok' && !roStale) {
+          roBadge.textContent = `EXCHANGE READ-ONLY · ${fmtAge(roAge)}`;
+          roBadge.className = 'pill-readonly';
+        } else if (ro.status === 'ok' && roStale) {
+          roBadge.textContent = `READ-ONLY STALE (${fmtAge(roAge)})`;
+          roBadge.className = 'pill-stale';
+        } else {
+          roBadge.textContent = `READ-ONLY ${(ro.status || 'UNAVAILABLE').toUpperCase()}`;
+          roBadge.className = 'pill-err';
+        }
+
+        const roElId = `g-${ex}-ro`;
+        if (ro.status === 'ok') {
+          const entries = Object.entries(ro.balances || {});
+          const chips = entries.length
+            ? entries.slice(0, 8).map(([asset, qty]) => `<span class="ro-chip">${escapeHtml(asset)}: ${Number(qty).toLocaleString(undefined, { maximumFractionDigits: 6 })}</span>`).join('')
+              + (entries.length > 8 ? `<span class="ro-chip">+${entries.length - 8} more</span>` : '')
+            : '<span class="muted-note">No non-zero balances</span>';
+          setHtmlDiff(
+            roElId,
+            `<div style="display:flex;justify-content:space-between;font-size:0.7rem;color:var(--amber);"><span>Real Exchange Assets (Not Paper Cash)</span><span>Live pos: ${(ro.positions || []).length}</span></div><div class="ro-assets">${chips}</div>`
+          );
+        } else {
+          setHtmlDiff(
+            roElId,
+            `<div class="muted-note">Read-only exchange balance unavailable (${escapeHtml(ro.error_type || ro.status || 'pending')}). Paper ledger remains isolated.</div>`
+          );
+        }
+      }
+
+      // Open Paper Positions + SL/TP table
+      const openPos = port.open_positions || [];
+      setHtmlDiff(
+        'tbl-positions',
+        openPos.length
+          ? openPos.map(p => {
+              const hasSl = p.stop_loss !== null && p.stop_loss !== undefined && Number(p.stop_loss) > 0;
+              const hasTp = p.take_profit !== null && p.take_profit !== undefined && Number(p.take_profit) > 0;
+              const sltpStatus = (hasSl && hasTp) ? 'ACTIVE' : ((hasSl || hasTp) ? 'PARTIAL' : 'NONE');
+              const sltpCls = sltpStatus === 'ACTIVE' ? 'pill-ok' : (sltpStatus === 'PARTIAL' ? 'pill-stale' : 'pill-err');
+              const upnl = Number(p.unrealized_pnl_usd || 0);
+              return `<tr class="clickable-row" onclick="selectChartMarket('${escapeHtml(p.exchange)}','${escapeHtml(p.market_type)}','${escapeHtml(p.symbol)}')">
+                <td>${escapeHtml(p.bot_id)}</td>
+                <td>${escapeHtml(String(p.exchange).toUpperCase())}</td>
+                <td><strong>${escapeHtml(p.symbol)}</strong></td>
+                <td><span class="tag">${escapeHtml(p.market_type)}</span></td>
+                <td class="${p.direction === 'long' ? 'pos' : 'neg'}">${escapeHtml(String(p.direction).toUpperCase())}</td>
+                <td>${Number(p.qty).toFixed(5)}</td>
+                <td>${fmtPrice(p.entry_price)}</td>
+                <td>${fmtPrice(p.mark_price)}</td>
+                <td>${Number(p.leverage || 1).toFixed(1)}x</td>
+                <td class="${upnl >= 0 ? 'pos' : 'neg'}">${fmtUsd(upnl, true)}</td>
+                <td>${hasSl ? fmtPrice(p.stop_loss) : '—'}</td>
+                <td>${hasTp ? fmtPrice(p.take_profit) : '—'}</td>
+                <td><span class="${sltpCls}">${sltpStatus}</span></td>
+              </tr>`;
+            }).join('')
+          : '<tr><td colspan="13" class="empty-row">No open paper positions.</td></tr>'
+      );
+
+      // Exchange Connection & Readiness table
+      setHtmlDiff(
+        'tbl-exchanges',
+        (d.exchanges || []).map(e => {
+          const auth = (d.auth_verification?.[e.exchange] || {}).status || (e.credentials_configured ? 'configured' : 'public');
+          const age = isoAgeSec(e.last_ok_at);
+          return `<tr>
+            <td><strong>${escapeHtml(e.exchange.toUpperCase())}</strong></td>
+            <td class="${e.healthy ? 'pos' : 'neg'}">${e.circuit_open ? 'CIRCUIT OPEN' : (e.healthy ? 'ONLINE' : 'DEGRADED')}</td>
+            <td>${escapeHtml(auth)}</td>
+            <td>${fmtAge(age)}</td>
+            <td>${e.consecutive_errors}</td>
+            <td>${e.read_only_enforced ? 'LOCKED' : 'ERR'}</td>
+          </tr>`;
+        }).join('') || '<tr><td colspan="6" class="empty-row">No exchanges configured.</td></tr>'
+      );
+
+      // Scanner table (click to chart)
+      setTextDiff('scanner-fresh-badge', `SCAN AGE: ${fmtAge(cycleAge)}`);
+      setHtmlDiff(
+        'tbl-scanner',
+        (d.scanner || []).map(s => `<tr class="clickable-row" onclick="selectChartMarket('${escapeHtml(s.exchange)}','${escapeHtml(s.market_type)}','${escapeHtml(s.symbol)}')">
+          <td>${escapeHtml(s.exchange.toUpperCase())}</td>
+          <td><strong>${escapeHtml(s.symbol)}</strong></td>
+          <td><span class="tag">${escapeHtml(s.market_type)}</span></td>
+          <td>${fmtPrice(s.last_price)}</td>
+          <td>${Number(s.rsi || 0).toFixed(1)}</td>
+          <td>${escapeHtml(s.regime)}</td>
+          <td class="pos">${Number(s.opportunity_score || 0).toFixed(1)}</td>
+        </tr>`).join('') || '<tr><td colspan="7" class="empty-row">Scanner awaiting first market snapshot…</td></tr>'
+      );
+
+      // AI Strategy Signals
+      setHtmlDiff(
+        'tbl-signals',
+        (d.signals || []).map(s => {
+          const tp0 = Array.isArray(s.take_profit_targets) && s.take_profit_targets.length ? fmtPrice(s.take_profit_targets[0]) : '—';
+          return `<tr class="clickable-row" onclick="selectChartMarket('${escapeHtml(s.exchange)}','${escapeHtml(s.market_type)}','${escapeHtml(s.symbol)}')">
+            <td>${escapeHtml(s.strategy_name)}</td>
+            <td>${escapeHtml(s.exchange.toUpperCase())}</td>
+            <td><strong>${escapeHtml(s.symbol)}</strong></td>
+            <td class="${s.direction === 'long' ? 'pos' : 'neg'}">${escapeHtml(String(s.direction).toUpperCase())}</td>
+            <td>${fmtPrice(s.stop_loss)} / ${tp0}</td>
+            <td>${Number(s.risk_reward_ratio || 0).toFixed(2)}</td>
+            <td>${(Number(s.confidence_score || 0) * 100).toFixed(1)}%</td>
+          </tr>`;
+        }).join('') || '<tr><td colspan="7" class="empty-row">No active strategy signals in current cycle.</td></tr>'
+      );
+
+      // Paper Bot Manager
+      setHtmlDiff(
+        'tbl-bots',
+        (d.bots || []).map(b => {
+          const execState = estopActive ? 'E-STOP' : (b.enabled ? 'RUNNING' : 'PAUSED');
+          const execCls = estopActive ? 'pill-err' : (b.enabled ? 'pill-ok' : 'pill-stale');
+          return `<tr>
+            <td>${escapeHtml(b.name)}</td>
+            <td>${escapeHtml(b.exchange.toUpperCase())}</td>
+            <td><span class="tag">${escapeHtml(b.market_type)} ${Number(b.leverage || 1).toFixed(0)}x</span></td>
+            <td><span class="${execCls}">${execState}</span></td>
+            <td>$${Number(b.cash_usd || 0).toFixed(2)}</td>
+            <td class="${Number(b.realized_pnl_usd) >= 0 ? 'pos' : 'neg'}">${fmtUsd(b.realized_pnl_usd, true)}</td>
+            <td>${b.open_positions}</td>
+            <td><button class="btn btn-sm" onclick="toggleBot('${escapeHtml(b.bot_id)}', ${!b.enabled}, this)">${b.enabled ? 'PAUSE' : 'START'}</button></td>
+          </tr>`;
+        }).join('') || '<tr><td colspan="8" class="empty-row">No paper bots registered.</td></tr>'
+      );
+
+      renderActivityTable(d);
+      renderWatchOnlyWallets(d.watch_only_wallets);
+      renderUnifiedTreasury(d.unified_treasury);
+    }
+
+    function renderActivityTable(d) {
+      if (activityTab === 'fills') {
+        setHtmlDiff('tbl-activity-head', '<tr><th>Time</th><th>Bot</th><th>Ex</th><th>Symbol</th><th>Side</th><th>Qty</th><th>Fill Price</th><th>Fee</th><th>Slippage</th></tr>');
+        const fills = (d.fills || []).slice(0, 30);
+        setHtmlDiff(
+          'tbl-activity-body',
+          fills.length ? fills.map(f => `<tr>
+            <td>${f.timestamp ? new Date(f.timestamp).toLocaleTimeString() : '—'}</td>
+            <td>${escapeHtml(f.bot_id)}</td>
+            <td>${escapeHtml(String(f.exchange).toUpperCase())}</td>
+            <td><strong>${escapeHtml(f.symbol)}</strong></td>
+            <td class="${f.side === 'buy' ? 'pos' : 'neg'}">${escapeHtml(String(f.side).toUpperCase())}</td>
+            <td>${Number(f.qty).toFixed(5)}</td>
+            <td>${fmtPrice(f.price)}</td>
+            <td>$${Number(f.fee_usd || 0).toFixed(4)}</td>
+            <td>${Number(f.slippage_bps || 0).toFixed(2)} bps</td>
+          </tr>`).join('') : '<tr><td colspan="9" class="empty-row">No paper fills recorded yet.</td></tr>'
+        );
+      } else if (activityTab === 'alerts') {
+        setHtmlDiff('tbl-activity-head', '<tr><th>Time</th><th>Level</th><th>Message</th></tr>');
+        const alerts = (d.risk?.recent_alerts || []).slice(0, 30);
+        setHtmlDiff(
+          'tbl-activity-body',
+          alerts.length ? alerts.map(a => `<tr>
+            <td>${a.timestamp ? new Date(a.timestamp).toLocaleTimeString() : '—'}</td>
+            <td><span class="${a.level === 'CRITICAL' ? 'pill-err' : (a.level === 'WARNING' ? 'pill-stale' : 'pill-ok')}">${escapeHtml(a.level)}</span></td>
+            <td style="white-space:normal;">${escapeHtml(a.message)}</td>
+          </tr>`).join('') : '<tr><td colspan="3" class="empty-row">No recent risk alerts.</td></tr>'
+        );
+      } else {
+        setHtmlDiff('tbl-activity-head', '<tr><th>Time</th><th>Bot</th><th>Ex</th><th>Symbol</th><th>Side</th><th>Status</th><th>Fill / Reason</th></tr>');
+        const orders = (d.orders || []).slice(0, 30);
+        setHtmlDiff(
+          'tbl-activity-body',
+          orders.length ? orders.map(o => `<tr>
+            <td>${o.created_at ? new Date(o.created_at).toLocaleTimeString() : '—'}</td>
+            <td>${escapeHtml(o.bot_id)}</td>
+            <td>${escapeHtml(String(o.exchange).toUpperCase())}</td>
+            <td><strong>${escapeHtml(o.symbol)}</strong></td>
+            <td class="${o.side === 'buy' ? 'pos' : 'neg'}">${escapeHtml(String(o.side).toUpperCase())}</td>
+            <td><span class="tag">${escapeHtml(o.status)}</span></td>
+            <td>${o.avg_fill_price ? fmtPrice(o.avg_fill_price) : escapeHtml(o.reject_reason || '—')}</td>
+          </tr>`).join('') : '<tr><td colspan="7" class="empty-row">No paper orders recorded yet.</td></tr>'
+        );
+      }
+    }
+
     function renderWatchOnlyWallets(walletState) {
-      const container = document.getElementById('wallet-panel-body');
       const rpcBadge = document.getElementById('wallet-rpc-badge');
       const freshEl = document.getElementById('wallet-freshness');
       const wallets = walletState?.wallets || [];
@@ -372,7 +942,7 @@
         rpcBadge.textContent = 'RPC: NO WALLETS';
         rpcBadge.className = 'pill-err';
         freshEl.textContent = 'No watch-only wallets registered.';
-        container.innerHTML = '<div class="wallet-box muted-note">No registered watch-only wallets found in config/watch_only_wallets.json.</div>';
+        setHtmlDiff('wallet-panel-body', '<div class="wallet-box muted-note">No registered watch-only wallets found in config/watch_only_wallets.json.</div>');
         return;
       }
       const primary = wallets[0];
@@ -383,7 +953,7 @@
         ? `Last verified: ${primary.last_success_at} · Cache age: ${primary.cache_age_sec ?? '—'}s`
         : (primary.error ? `RPC Error: ${primary.error}` : 'Awaiting first RPC sync…');
 
-      container.innerHTML = wallets.map(w => {
+      setHtmlDiff('wallet-panel-body', wallets.map(w => {
         const solText = w.sol_balance !== null && w.sol_balance !== undefined ? `${w.sol_balance} SOL` : 'Unknown (RPC unavailable)';
         const usdtText = w.usdt_balance !== null && w.usdt_balance !== undefined ? `${w.usdt_balance} SPL USDT` : 'Unknown (RPC unavailable)';
         const addrEsc = escapeHtml(w.address);
@@ -394,8 +964,8 @@
           </div>
           <div class="mono-addr" style="margin-bottom:8px;">${addrEsc}</div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
-            <button class="btn" onclick="copyWalletAddress('${addrEsc}', this)">COPY ADDRESS</button>
-            <a class="btn" style="text-decoration:none;" href="${escapeHtml(w.solscan_url)}" target="_blank" rel="noopener noreferrer">SOLSCAN ↗</a>
+            <button class="btn btn-sm" onclick="copyWalletAddress('${addrEsc}', this)">COPY ADDRESS</button>
+            <a class="btn btn-sm" style="text-decoration:none;" href="${escapeHtml(w.solscan_url)}" target="_blank" rel="noopener noreferrer">SOLSCAN ↗</a>
           </div>
           <div class="treasury-kpi" style="margin-bottom:6px;">
             <div><div class="kpi-label">SOL Balance</div><div class="kpi-val" style="font-size:1.1rem;">${escapeHtml(solText)}</div></div>
@@ -406,7 +976,7 @@
             ${w.error ? `<div class="neg" style="margin-top:4px;">Note: ${escapeHtml(w.error)}</div>` : ''}
           </div>
         </div>`;
-      }).join('');
+      }).join(''));
     }
 
     async function copyWalletAddress(addr, btn) {
@@ -421,7 +991,7 @@
     }
 
     async function refreshWatchOnlyWallet() {
-      const res = await fetch('/api/wallets/watch-only?refresh=true');
+      const res = await fetch('/api/wallets/watch-only?refresh=true', { credentials: 'same-origin' });
       if (!res.ok) return;
       const data = await res.json();
       renderWatchOnlyWallets(data);
@@ -450,41 +1020,54 @@
       flagBadge.textContent = `ACTIVE · ${t.active_slots || 0}/${t.max_agent_slots || 18} SLOTS`;
       flagBadge.className = 'badge badge-paper';
 
-      fetch('/api/treasury/paper/pnl-audit', {cache:'no-store'})
+      if (auditAbortCtrl) auditAbortCtrl.abort();
+      auditAbortCtrl = new AbortController();
+      fetch('/api/treasury/paper/pnl-audit', {
+        cache: 'no-store',
+        credentials: 'same-origin',
+        signal: auditAbortCtrl.signal,
+      })
         .then(r => { if (!r.ok) throw new Error('Audit unavailable'); return r.json(); })
         .then(a => {
           const gap = Number(a.unexplained_usd || 0);
           const el = document.getElementById('treasury-pnl-audit');
-          el.textContent = `PAPER P&L AUDIT · Account realized: $${Number(a.account_realized_usd || 0).toFixed(2)} · Attributed: $${Number(a.attributed_realized_usd || 0).toFixed(2)} · Unexplained historical difference: $${gap.toFixed(2)} · Fees ${a.fee_attributions}/${a.paper_fills} · Closes ${a.closure_attributions}/${a.recorded_closures} · Funding ${a.funding_attributions}/${a.funding_settlements} · Historical completeness: NOT CERTIFIED`;
-          el.style.color = Math.abs(gap) > 0.005 ? '#ffb74d' : '';
-        }).catch(() => { document.getElementById('treasury-pnl-audit').textContent = 'Paper P&L audit unavailable'; });
+          const certLabel = a.historical_completeness_certified ? 'CERTIFIED' : 'NOT CERTIFIED';
+          const covLabel = a.recorded_evidence_coverage_ok ? 'COVERED' : 'GAP';
+          el.textContent = `PAPER P&L AUDIT · Account realized: $${Number(a.account_realized_usd || 0).toFixed(2)} · Attributed: $${Number(a.attributed_realized_usd || 0).toFixed(2)} · Unexplained: $${gap.toFixed(4)} (${covLabel}) · Fees ${a.fee_attributions}/${a.paper_fills} · Closes ${a.closure_attributions}/${a.recorded_closures} · Funding ${a.funding_attributions}/${a.funding_settlements} · Historical completeness: ${certLabel}`;
+          el.style.color = Math.abs(gap) > 0.005 ? 'var(--amber)' : 'var(--green)';
+        })
+        .catch(err => {
+          if (err && err.name === 'AbortError') return;
+          document.getElementById('treasury-pnl-audit').textContent = 'Paper P&L audit unavailable';
+        });
+
       const recon = t.reconciliation || {};
       const pool = recon.master_pool || {};
       const fx = recon.usd_valuation || {};
-      reconBadge.textContent = recon.balanced ? 'JOURNAL: BALANCED · P&L UNVERIFIED' : 'JOURNAL: CHECK';
+      reconBadge.textContent = recon.balanced ? 'JOURNAL: BALANCED' : 'JOURNAL: CHECK';
       reconBadge.className = recon.balanced ? 'pill-ok' : 'pill-err';
       fxNote.textContent = fx.fx_rate ? `FX ${fx.fx_pair}: ${fx.fx_rate} (${fx.fx_timestamp || '—'})` : '';
 
-      document.getElementById('treasury-kpis').innerHTML = `
+      setHtmlDiff('treasury-kpis', `
         <div class="wallet-box"><div class="kpi-label">Master Pool (PAPER)</div><div class="kpi-val" style="font-size:1.15rem;">${escapeHtml(pool.total_capital || '0')} ${escapeHtml(pool.asset || 'USDT')}</div><div class="muted-note">≈ $${escapeHtml(fx.total_usd || '0.00')}</div></div>
         <div class="wallet-box"><div class="kpi-label">Free Capital</div><div class="kpi-val" style="font-size:1.15rem;">${escapeHtml(pool.free_capital || '0')}</div><div class="muted-note">≈ $${escapeHtml(fx.free_usd || '0.00')}</div></div>
         <div class="wallet-box"><div class="kpi-label">Reserved / Allocated</div><div class="kpi-val" style="font-size:1.15rem;">${escapeHtml(pool.reserved_capital || '0')}</div><div class="muted-note">Slot sum: ${escapeHtml(pool.slot_allocated_sum || '0')}</div></div>
         <div class="wallet-box"><div class="kpi-label">Configured Agents</div><div class="kpi-val" style="font-size:1.15rem;">${t.configured_slots ?? 0} / ${t.max_agent_slots ?? 18}</div><div class="muted-note">Separated from real: ${recon.paper_separated_from_real ? 'YES' : 'NO'}</div></div>
-      `;
+      `);
 
       const limits = t.risk_limits || {};
-      document.getElementById('treasury-risk-summary').innerHTML = `
+      setHtmlDiff('treasury-risk-summary', `
         <div>Max Single-Agent Concentration: <strong>${((limits.max_single_agent_concentration_pct || 0) * 100).toFixed(1)}%</strong></div>
         <div>Max Aggregate Allocated: <strong>${((limits.max_aggregate_allocated_pct || 0) * 100).toFixed(1)}%</strong></div>
         <div>Agent Daily Loss Cap: <strong>${((limits.agent_daily_loss_cap_pct || 0) * 100).toFixed(2)}%</strong></div>
         <div>Journal Entries Checked: <strong>${recon.journal_entries_checked ?? 0}</strong> · Imbalances: <strong>${(recon.journal_imbalances || []).length}</strong></div>
         <div>Live Orders: <strong>${t.live_order_submission ? 'ERR' : 'DISABLED'}</strong> · External Writes: <strong>${t.external_writes ? 'ERR' : 'DISABLED'}</strong></div>
-      `;
+      `);
 
       const exAttr = t.attribution_by_exchange || {};
       const ro = recon.exchange_readonly_balances || {};
       const exNames = Array.from(new Set([...Object.keys(exAttr), ...Object.keys(ro), 'binance', 'okx', 'bybit']));
-      document.getElementById('tbl-treasury-exchanges').innerHTML = exNames.map(ex => {
+      setHtmlDiff('tbl-treasury-exchanges', exNames.map(ex => {
         const attr = exAttr[ex] || {};
         const netPnl = attr.net_trading_pnl ?? '0';
         const roInfo = ro[ex] || {};
@@ -494,7 +1077,7 @@
           <td class="${Number(netPnl) >= 0 ? 'pos' : 'neg'}">${escapeHtml(netPnl)}</td>
           <td>${escapeHtml(roInfo.status || 'unconfigured')}</td>
         </tr>`;
-      }).join('');
+      }).join(''));
 
       const slots = t.slots || [];
       const attrByAgent = t.attribution_by_agent || {};
@@ -519,65 +1102,525 @@
           </div>`);
         }
       }
-      document.getElementById('treasury-agent-grid').innerHTML = cards.join('');
+      setHtmlDiff('treasury-agent-grid', cards.join(''));
     }
 
-    async function loadChart() {
+    // ---------- Real-Time Chart Engine ----------
+    function selectChartMarket(ex, mtype, sym) {
+      const selEx = document.getElementById('sel-ex');
+      const selMt = document.getElementById('sel-mtype');
+      const selSym = document.getElementById('sel-sym');
+      const normMt = (mtype === 'futures' || mtype === 'perp') ? 'perp' : 'spot';
+      if (['okx', 'bybit', 'binance'].includes(ex)) selEx.value = ex;
+      selMt.value = normMt;
+      if (!Array.from(selSym.options).some(o => o.value === sym)) {
+        const opt = document.createElement('option');
+        opt.value = sym;
+        opt.textContent = sym;
+        selSym.appendChild(opt);
+      }
+      selSym.value = sym;
+      onChartControlChange();
+      document.getElementById('price-canvas')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+
+    function onChartControlChange() {
       const ex = document.getElementById('sel-ex').value;
+      const mt = document.getElementById('sel-mtype').value;
       const sym = document.getElementById('sel-sym').value;
       const tf = document.getElementById('sel-tf').value;
-      const res = await fetch(`/api/candles/${ex}/spot/${sym}/${tf}`);
-      if (!res.ok) return;
-      const data = await res.json();
-      drawCandles(data.candles || []);
+      const changed = (
+        ex !== chartState.exchange ||
+        mt !== chartState.marketType ||
+        sym !== chartState.symbol ||
+        tf !== chartState.timeframe
+      );
+      if (!changed) return;
+
+      // Cancel any obsolete in-flight request immediately
+      chartState.abortCtrl?.abort();
+      chartState.abortCtrl = null;
+      chartState.inFlight = false;
+      chartState.reqSeq += 1;
+
+      chartState.exchange = ex;
+      chartState.marketType = mt;
+      chartState.symbol = sym;
+      chartState.timeframe = tf;
+      chartState.candlesByTs.clear();
+      chartState.orderedCandles = [];
+      chartState.lastSuccessMs = 0;
+      chartState.errorMsg = null;
+      chartState.backoffMs = CHART_BASE_REFRESH_MS;
+      chartState.hoverIdx = -1;
+
+      updateChartMetaUI();
+      loadChart({ incremental: false, force: true });
     }
 
-    function drawCandles(candles) {
+    function toggleChartOverlay(kind, btn) {
+      if (kind === 'ema') chartState.showEma = !chartState.showEma;
+      if (kind === 'vol') chartState.showVol = !chartState.showVol;
+      btn.classList.toggle('btn-active', kind === 'ema' ? chartState.showEma : chartState.showVol);
+      scheduleChartDraw();
+    }
+
+    function toggleChartAutoRefresh(btn) {
+      chartState.autoEnabled = !chartState.autoEnabled;
+      btn.classList.toggle('btn-active', chartState.autoEnabled);
+      btn.textContent = chartState.autoEnabled ? 'AUTO 6s: ON' : 'AUTO 6s: PAUSED';
+      scheduleNextChartPoll();
+      updateChartMetaUI();
+    }
+
+    function scheduleNextChartPoll() {
+      if (chartState.timerId) {
+        clearTimeout(chartState.timerId);
+        chartState.timerId = null;
+      }
+      if (!chartState.autoEnabled) return;
+      chartState.timerId = setTimeout(() => {
+        if (document.visibilityState === 'visible') {
+          loadChart({ incremental: chartState.orderedCandles.length > 0, force: false });
+        } else {
+          scheduleNextChartPoll();
+        }
+      }, chartState.backoffMs);
+    }
+
+    async function loadChart({ incremental = false, force = false } = {}) {
+      if (chartState.inFlight && !force) return;
+      if (force && chartState.abortCtrl) {
+        chartState.abortCtrl.abort();
+      }
+      const controller = new AbortController();
+      chartState.abortCtrl = controller;
+      const mySeq = ++chartState.reqSeq;
+      chartState.inFlight = true;
+
+      const ex = chartState.exchange;
+      const mt = chartState.marketType;
+      const sym = chartState.symbol;
+      const tf = chartState.timeframe;
+      const overlay = document.getElementById('chart-overlay');
+      const overlayTxt = document.getElementById('chart-overlay-text');
+
+      if (!chartState.orderedCandles.length) {
+        overlayTxt.textContent = `Loading ${ex.toUpperCase()} ${sym} (${tf})…`;
+        overlay.style.display = 'flex';
+      }
+
+      try {
+        const lastBar = chartState.orderedCandles[chartState.orderedCandles.length - 1];
+        const useInc = incremental && lastBar && Number.isFinite(lastBar.timestamp);
+        const params = useInc ? `?since=${lastBar.timestamp}&limit=10` : '?limit=120';
+        const url = `/api/candles/${ex}/${mt}/${sym}/${tf}${params}`;
+        const res = await fetch(url, {
+          cache: 'no-store',
+          credentials: 'same-origin',
+          signal: controller.signal,
+        });
+
+        if (mySeq !== chartState.reqSeq || controller.signal.aborted) return;
+
+        if (!res.ok) {
+          let errDetail = `HTTP ${res.status}`;
+          try {
+            const j = await res.json();
+            if (j?.detail?.message) errDetail = j.detail.message;
+            else if (typeof j?.detail === 'string') errDetail = j.detail;
+          } catch (_) {}
+          const err = new Error(errDetail);
+          err.status = res.status;
+          throw err;
+        }
+
+        const data = await res.json();
+        if (mySeq !== chartState.reqSeq || controller.signal.aborted) return;
+
+        const incoming = Array.isArray(data.candles) ? data.candles : [];
+        if (!useInc) chartState.candlesByTs.clear();
+        for (const c of incoming) {
+          const ts = Number(c.timestamp);
+          const o = Number(c.open), h = Number(c.high), l = Number(c.low), cl = Number(c.close), v = Number(c.volume || 0);
+          if (ts > 0 && Number.isFinite(o) && Number.isFinite(h) && Number.isFinite(l) && Number.isFinite(cl)) {
+            chartState.candlesByTs.set(ts, { timestamp: ts, open: o, high: h, low: l, close: cl, volume: Number.isFinite(v) ? v : 0 });
+          }
+        }
+        const sortedKeys = Array.from(chartState.candlesByTs.keys()).sort((a, b) => a - b);
+        const trimmedKeys = sortedKeys.slice(-240);
+        if (sortedKeys.length > 240) {
+          for (const k of sortedKeys.slice(0, sortedKeys.length - 240)) chartState.candlesByTs.delete(k);
+        }
+        chartState.orderedCandles = trimmedKeys.map(k => chartState.candlesByTs.get(k));
+
+        chartState.source = data.source || 'exchange_rest';
+        chartState.exchangeHealthy = data.exchange_healthy !== false && !data.stale;
+        chartState.lastSuccessMs = Date.now();
+        chartState.lastSuccessIso = data.fetched_at_iso || new Date().toISOString();
+        chartState.errorMsg = null;
+        chartState.backoffMs = CHART_BASE_REFRESH_MS;
+
+        overlay.style.display = chartState.orderedCandles.length ? 'none' : 'flex';
+        if (!chartState.orderedCandles.length) {
+          overlayTxt.textContent = `No OHLCV candles returned for ${ex.toUpperCase()} ${sym} (${tf}).`;
+        }
+        updateChartMetaUI();
+        scheduleChartDraw();
+      } catch (err) {
+        if (err && err.name === 'AbortError') return;
+        if (mySeq !== chartState.reqSeq) return;
+        chartState.errorMsg = err?.message || 'Feed error';
+        chartState.backoffMs = Math.min(chartState.backoffMs * 2, CHART_MAX_BACKOFF_MS);
+        if (!chartState.orderedCandles.length) {
+          overlayTxt.textContent = `Chart error (${chartState.errorMsg}). Retrying in ${Math.round(chartState.backoffMs / 1000)}s…`;
+          overlay.style.display = 'flex';
+        } else {
+          overlay.style.display = 'none';
+        }
+        updateChartMetaUI();
+      } finally {
+        if (mySeq === chartState.reqSeq) {
+          chartState.inFlight = false;
+          scheduleNextChartPoll();
+        }
+      }
+    }
+
+    function updateChartMetaUI() {
+      const metaBadge = document.getElementById('chart-meta-badge');
+      const srcBadge = document.getElementById('chart-source-badge');
+      const healthBadge = document.getElementById('chart-health-badge');
+      const lastSucEl = document.getElementById('chart-last-success');
+      const retryEl = document.getElementById('chart-retry-status');
+
+      metaBadge.textContent = `${chartState.exchange.toUpperCase()} · ${chartState.symbol} · ${chartState.marketType.toUpperCase()} · ${chartState.timeframe}`;
+      srcBadge.textContent = `SOURCE: ${chartState.source}`;
+
+      const ageSec = chartState.lastSuccessMs ? (Date.now() - chartState.lastSuccessMs) / 1000 : null;
+      const isStale = ageSec !== null && ageSec > CHART_STALE_THRESHOLD_SEC;
+
+      if (chartState.errorMsg) {
+        healthBadge.textContent = chartState.orderedCandles.length ? 'STALE · RETRYING' : 'DISCONNECTED';
+        healthBadge.className = 'pill-err';
+        retryEl.textContent = `Feed error: ${chartState.errorMsg} · Backoff retry in ${Math.round(chartState.backoffMs / 1000)}s`;
+        retryEl.style.color = 'var(--red)';
+      } else if (!chartState.lastSuccessMs) {
+        healthBadge.textContent = 'FEED: CONNECTING';
+        healthBadge.className = 'pill-stale';
+        retryEl.textContent = 'Fetching initial candles…';
+        retryEl.style.color = 'var(--muted)';
+      } else if (!chartState.exchangeHealthy || isStale) {
+        healthBadge.textContent = `STALE (${fmtAge(ageSec)})`;
+        healthBadge.className = 'pill-stale';
+        retryEl.textContent = chartState.autoEnabled ? 'Attempting auto-recovery every 6s' : 'Auto-refresh paused';
+        retryEl.style.color = 'var(--amber)';
+      } else {
+        healthBadge.textContent = 'FEED: LIVE';
+        healthBadge.className = 'pill-ok';
+        retryEl.textContent = chartState.autoEnabled
+          ? `Auto-refresh every ${Math.round(CHART_BASE_REFRESH_MS / 1000)}s (incremental)`
+          : 'Auto-refresh paused by operator';
+        retryEl.style.color = 'var(--muted)';
+      }
+
+      lastSucEl.textContent = chartState.lastSuccessMs
+        ? `Last candle update: ${new Date(chartState.lastSuccessMs).toLocaleTimeString()} (${fmtAge(ageSec)}) · Bars: ${chartState.orderedCandles.length}`
+        : 'Last candle update: pending…';
+
+      const bar = (chartState.hoverIdx >= 0 && chartState.orderedCandles[chartState.hoverIdx])
+        ? chartState.orderedCandles[chartState.hoverIdx]
+        : chartState.orderedCandles[chartState.orderedCandles.length - 1];
+      const ohlcvEl = document.getElementById('chart-ohlcv');
+      if (bar) {
+        const dtStr = new Date(bar.timestamp).toLocaleString(undefined, { month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+        const chgCls = bar.close >= bar.open ? 'pos' : 'neg';
+        ohlcvEl.innerHTML =
+          `<span>${escapeHtml(dtStr)}</span>` +
+          `<span>O <strong style="color:var(--text)">${fmtPrice(bar.open)}</strong></span>` +
+          `<span>H <strong class="pos">${fmtPrice(bar.high)}</strong></span>` +
+          `<span>L <strong class="neg">${fmtPrice(bar.low)}</strong></span>` +
+          `<span>C <strong class="${chgCls}">${fmtPrice(bar.close)}</strong></span>` +
+          `<span>V <strong style="color:var(--cyan)">${Number(bar.volume).toLocaleString(undefined, { maximumFractionDigits: 2 })}</strong></span>`;
+      }
+    }
+
+    function computeEma(candles, period) {
+      if (candles.length < period) return [];
+      const k = 2 / (period + 1);
+      let ema = candles.slice(0, period).reduce((s, c) => s + c.close, 0) / period;
+      const out = new Array(candles.length).fill(null);
+      out[period - 1] = ema;
+      for (let i = period; i < candles.length; i++) {
+        ema = candles[i].close * k + ema * (1 - k);
+        out[i] = ema;
+      }
+      return out;
+    }
+
+    function scheduleChartDraw() {
+      if (chartState.drawScheduled) return;
+      chartState.drawScheduled = true;
+      requestAnimationFrame(() => {
+        chartState.drawScheduled = false;
+        drawCandles();
+      });
+    }
+
+    function drawCandles() {
       const canvas = document.getElementById('price-canvas');
+      if (!canvas) return;
+      const rect = canvas.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) return;
+
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const cssW = Math.floor(rect.width);
+      const cssH = Math.floor(rect.height);
+      if (canvas.width !== cssW * dpr || canvas.height !== cssH * dpr) {
+        canvas.width = cssW * dpr;
+        canvas.height = cssH * dpr;
+      }
+
       const ctx = canvas.getContext('2d');
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, cssW, cssH);
+
+      const candles = chartState.orderedCandles;
       if (!candles.length) return;
-      const highs = candles.map(c => c.high), lows = candles.map(c => c.low);
-      const maxP = Math.max(...highs), minP = Math.min(...lows);
+
+      const padL = 8, padR = 68, padT = 12, padB = 24;
+      const plotW = Math.max(40, cssW - padL - padR);
+      const volH = chartState.showVol ? Math.round((cssH - padT - padB) * 0.18) : 0;
+      const priceH = Math.max(60, cssH - padT - padB - volH - (chartState.showVol ? 6 : 0));
+
+      let minP = Infinity, maxP = -Infinity, maxV = 0;
+      for (const c of candles) {
+        if (c.low < minP) minP = c.low;
+        if (c.high > maxP) maxP = c.high;
+        if (c.volume > maxV) maxV = c.volume;
+      }
+      const padSpan = (maxP - minP) * 0.06 || maxP * 0.002 || 1;
+      minP -= padSpan;
+      maxP += padSpan;
       const span = maxP - minP || 1;
-      const w = canvas.width / candles.length;
-      candles.forEach((c, i) => {
-        const x = i * w + w * 0.5;
-        const yH = canvas.height - ((c.high - minP) / span) * (canvas.height - 20) - 10;
-        const yL = canvas.height - ((c.low - minP) / span) * (canvas.height - 20) - 10;
-        const yO = canvas.height - ((c.open - minP) / span) * (canvas.height - 20) - 10;
-        const yC = canvas.height - ((c.close - minP) / span) * (canvas.height - 20) - 10;
+      const yForPrice = p => padT + priceH - ((p - minP) / span) * priceH;
+
+      // Grid lines & right price axis
+      ctx.font = '10px monospace';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      const gridRows = 4;
+      for (let i = 0; i <= gridRows; i++) {
+        const y = padT + (priceH * i) / gridRows;
+        const p = maxP - (span * i) / gridRows;
+        ctx.strokeStyle = 'rgba(132, 146, 166, 0.14)';
+        ctx.beginPath();
+        ctx.moveTo(padL, y);
+        ctx.lineTo(padL + plotW, y);
+        ctx.stroke();
+        ctx.fillStyle = '#8492a6';
+        ctx.fillText(fmtPrice(p), padL + plotW + 6, y);
+      }
+
+      // Time axis ticks
+      const stepX = plotW / candles.length;
+      const timeSteps = Math.min(5, Math.max(2, Math.floor(plotW / 110)));
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      for (let t = 0; t < timeSteps; t++) {
+        const idx = Math.min(candles.length - 1, Math.round((t * (candles.length - 1)) / Math.max(1, timeSteps - 1)));
+        const x = padL + idx * stepX + stepX * 0.5;
+        ctx.strokeStyle = 'rgba(132, 146, 166, 0.1)';
+        ctx.beginPath();
+        ctx.moveTo(x, padT);
+        ctx.lineTo(x, cssH - padB);
+        ctx.stroke();
+        const label = new Date(candles[idx].timestamp).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+        ctx.fillStyle = '#8492a6';
+        ctx.fillText(label, x, cssH - padB + 6);
+      }
+
+      // Volume bars
+      if (chartState.showVol && maxV > 0) {
+        const volTop = padT + priceH + 6;
+        for (let i = 0; i < candles.length; i++) {
+          const c = candles[i];
+          const x = padL + i * stepX + stepX * 0.5;
+          const h = (c.volume / maxV) * volH;
+          const bw = Math.max(1.5, stepX * 0.6);
+          ctx.fillStyle = c.close >= c.open ? 'rgba(0, 255, 157, 0.25)' : 'rgba(255, 42, 133, 0.25)';
+          ctx.fillRect(x - bw * 0.5, volTop + volH - h, bw, h);
+        }
+      }
+
+      // Candles
+      const bodyW = Math.max(2, Math.min(12, stepX * 0.62));
+      for (let i = 0; i < candles.length; i++) {
+        const c = candles[i];
+        const x = padL + i * stepX + stepX * 0.5;
+        const yH = yForPrice(c.high);
+        const yL = yForPrice(c.low);
+        const yO = yForPrice(c.open);
+        const yC = yForPrice(c.close);
         const up = c.close >= c.open;
-        ctx.strokeStyle = up ? '#00ff9d' : '#ff2a85';
-        ctx.fillStyle = ctx.strokeStyle;
-        ctx.beginPath(); ctx.moveTo(x, yH); ctx.lineTo(x, yL); ctx.stroke();
-        ctx.fillRect(x - Math.max(1, w * 0.3), Math.min(yO, yC), Math.max(2, w * 0.6), Math.max(2, Math.abs(yC - yO)));
-      });
+        const color = up ? '#00ff9d' : '#ff2a85';
+        ctx.strokeStyle = color;
+        ctx.fillStyle = color;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(x, yH);
+        ctx.lineTo(x, yL);
+        ctx.stroke();
+        ctx.fillRect(x - bodyW * 0.5, Math.min(yO, yC), bodyW, Math.max(1.5, Math.abs(yC - yO)));
+      }
+
+      // Optional EMA 9 & EMA 21 overlays
+      if (chartState.showEma) {
+        const drawLine = (vals, color) => {
+          ctx.strokeStyle = color;
+          ctx.lineWidth = 1.4;
+          ctx.beginPath();
+          let started = false;
+          for (let i = 0; i < vals.length; i++) {
+            if (vals[i] === null) continue;
+            const x = padL + i * stepX + stepX * 0.5;
+            const y = yForPrice(vals[i]);
+            if (!started) { ctx.moveTo(x, y); started = true; }
+            else ctx.lineTo(x, y);
+          }
+          ctx.stroke();
+        };
+        drawLine(computeEma(candles, 9), '#00f0ff');
+        drawLine(computeEma(candles, 21), '#ffb800');
+      }
+
+      // Current price dashed line & label pill
+      const last = candles[candles.length - 1];
+      const yLast = yForPrice(last.close);
+      const lastColor = last.close >= last.open ? '#00ff9d' : '#ff2a85';
+      ctx.save();
+      ctx.setLineDash([4, 4]);
+      ctx.strokeStyle = lastColor;
+      ctx.beginPath();
+      ctx.moveTo(padL, yLast);
+      ctx.lineTo(padL + plotW, yLast);
+      ctx.stroke();
+      ctx.restore();
+      ctx.fillStyle = lastColor;
+      ctx.fillRect(padL + plotW + 2, yLast - 9, padR - 4, 18);
+      ctx.fillStyle = '#070913';
+      ctx.font = 'bold 10px monospace';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(fmtPrice(last.close), padL + plotW + 5, yLast);
+
+      // Interactive hover crosshair
+      if (chartState.hoverIdx >= 0 && chartState.hoverIdx < candles.length) {
+        const idx = chartState.hoverIdx;
+        const bar = candles[idx];
+        const x = padL + idx * stepX + stepX * 0.5;
+        const y = yForPrice(bar.close);
+        ctx.save();
+        ctx.setLineDash([3, 3]);
+        ctx.strokeStyle = 'rgba(0, 240, 255, 0.6)';
+        ctx.beginPath();
+        ctx.moveTo(x, padT);
+        ctx.lineTo(x, cssH - padB);
+        ctx.moveTo(padL, y);
+        ctx.lineTo(padL + plotW, y);
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      chartState.layout = { padL, plotW, stepX, count: candles.length };
     }
 
-    async function toggleBot(botId, enabled) {
-      await fetch(`/api/bots/${botId}/toggle`, {
-        method: 'POST', headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({enabled})
+    function setupChartInteractions() {
+      const canvas = document.getElementById('price-canvas');
+      if (!canvas) return;
+      const handleMove = (clientX) => {
+        if (!chartState.layout || !chartState.orderedCandles.length) return;
+        const rect = canvas.getBoundingClientRect();
+        const x = clientX - rect.left - chartState.layout.padL;
+        const idx = Math.max(0, Math.min(chartState.layout.count - 1, Math.floor(x / chartState.layout.stepX)));
+        if (idx !== chartState.hoverIdx) {
+          chartState.hoverIdx = idx;
+          updateChartMetaUI();
+          scheduleChartDraw();
+        }
+      };
+      canvas.addEventListener('pointermove', e => handleMove(e.clientX));
+      canvas.addEventListener('pointerleave', () => {
+        chartState.hoverIdx = -1;
+        updateChartMetaUI();
+        scheduleChartDraw();
       });
-      fetchState();
+      if (typeof ResizeObserver !== 'undefined') {
+        const ro = new ResizeObserver(() => scheduleChartDraw());
+        ro.observe(canvas.parentElement || canvas);
+      }
+    }
+
+    async function toggleBot(botId, enabled, btn) {
+      if (btn) btn.disabled = true;
+      try {
+        await fetch(`/api/bots/${encodeURIComponent(botId)}/toggle`, {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ enabled }),
+        });
+        await fetchState(true);
+      } finally {
+        if (btn) btn.disabled = false;
+      }
     }
 
     async function triggerScan() {
-      await fetch('/api/scan-now', {method: 'POST'});
-      fetchState();
-      loadChart();
+      const btn = document.getElementById('btn-scan');
+      if (btn) { btn.disabled = true; btn.textContent = 'SCANNING…'; }
+      try {
+        await fetch('/api/scan-now', { method: 'POST', credentials: 'same-origin' });
+        await fetchState(true);
+        await loadChart({ incremental: false, force: true });
+      } finally {
+        if (btn) { btn.disabled = false; btn.textContent = 'SCAN NOW'; }
+      }
     }
 
     async function toggleEmergencyStop() {
-      const url = estopActive ? '/api/risk/reset-stop' : '/api/risk/emergency-stop';
-      await fetch(url, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({reason: 'Dashboard operator action'})});
-      fetchState();
+      const btn = document.getElementById('btn-estop');
+      if (btn) btn.disabled = true;
+      try {
+        const url = estopActive ? '/api/risk/reset-stop' : '/api/risk/emergency-stop';
+        await fetch(url, {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reason: 'Dashboard operator action' }),
+        });
+        await fetchState(true);
+      } finally {
+        if (btn) btn.disabled = false;
+      }
     }
 
-    fetchState();
-    loadChart();
-    setInterval(fetchState, 10000);
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        fetchState(false);
+        if (chartState.autoEnabled) {
+          loadChart({ incremental: chartState.orderedCandles.length > 0, force: false });
+        }
+      }
+    });
+
+    setupChartInteractions();
+    fetchState(true);
+    loadChart({ incremental: false, force: true });
+    setInterval(() => {
+      if (document.visibilityState === 'visible') fetchState(false);
+    }, STATE_REFRESH_MS);
+    setInterval(updateConnectionBadges, 2000);
   </script>
 </body>
 </html>

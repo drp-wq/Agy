@@ -296,19 +296,48 @@ class TradingEngineService:
         self.db.close()
 
     def state_snapshot(self) -> dict[str, Any]:
+        now_dt = datetime.now(timezone.utc)
+        now_ts = int(now_dt.timestamp())
         positions = self.db.list_positions()
         total_eq = self.paper_engine.total_portfolio_equity(self.scanner.latest_snapshots)
         accounts = self.db.list_accounts()
         initial_eq = sum(a["initial_equity_usd"] for a in accounts) or self.config.initial_paper_equity_usd
         total_pnl = round(total_eq - initial_eq, 2)
+        realized_pnl = round(sum(float(a.get("realized_pnl_usd") or 0.0) for a in accounts), 2)
+        unrealized_pnl = round(sum(float(p.unrealized_pnl_usd or 0.0) for p in positions), 2)
+        total_cash = round(sum(float(a.get("cash_usd") or 0.0) for a in accounts), 2)
+        reserved_margin = round(sum(float(a.get("reserved_margin_usd") or 0.0) for a in accounts), 2)
+        free_cash = round(max(0.0, total_cash - reserved_margin), 2)
         orders = self.db.list_orders(limit=50)
         fills = self.db.list_fills(limit=50)
+        last_cycle_age_sec = (
+            round(max(0.0, (now_dt - self.last_cycle_at).total_seconds()), 1)
+            if self.last_cycle_at
+            else None
+        )
+        available_pairs = sorted(
+            {
+                *self.scanner.symbols,
+                *(s.symbol for s in self.scanner.latest_snapshots.values()),
+                *(sym for b in self.bot_manager.bots.values() for sym in b.symbols),
+            }
+        )
+        ro_timestamps = [
+            int(v["timestamp"])
+            for v in self.readonly_account_snapshots.values()
+            if isinstance(v, dict) and isinstance(v.get("timestamp"), (int, float))
+        ]
+        readonly_sync_at = max(ro_timestamps) if ro_timestamps else None
 
         return {
             "mode": "PAPER_ONLY",
             "live_execution_disabled": LIVE_EXECUTION_PERMANENTLY_DISABLED,
+            "generated_at": now_ts,
             "cycle_count": self.cycle_count,
             "last_cycle_at": self.last_cycle_at.isoformat() if self.last_cycle_at else None,
+            "last_cycle_age_sec": last_cycle_age_sec,
+            "available_pairs": available_pairs,
+            "readonly_sync_at": readonly_sync_at,
             "exchanges": self.registry.health_summary(),
             "auth_verification": self.auth_verification,
             "readonly_account_snapshots": self.readonly_account_snapshots,
@@ -320,6 +349,11 @@ class TradingEngineService:
                 "initial_equity_usd": round(initial_eq, 2),
                 "total_pnl_usd": total_pnl,
                 "total_pnl_pct": round((total_pnl / initial_eq) * 100.0, 2) if initial_eq > 0 else 0.0,
+                "realized_pnl_usd": realized_pnl,
+                "unrealized_pnl_usd": unrealized_pnl,
+                "cash_usd": total_cash,
+                "reserved_margin_usd": reserved_margin,
+                "free_cash_usd": free_cash,
                 "open_positions": [p.model_dump() for p in positions],
             },
             "risk": self.risk.status_summary(total_eq, positions),

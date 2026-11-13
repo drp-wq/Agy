@@ -6,6 +6,7 @@ import {
   LineSeries,
   ColorType,
   IChartApi,
+  IPriceLine,
   ISeriesApi,
   Time
 } from 'lightweight-charts';
@@ -45,8 +46,21 @@ interface ProMarketChartProps {
 
 type OscillatorMode = 'none' | 'rsi' | 'macd' | 'atr';
 
-const AVAILABLE_SYMBOLS = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'BNB/USDT', 'AVAX/USDT', 'ARB/USDT'];
+const AVAILABLE_SYMBOLS = [
+  'BTC/USDT',
+  'ETH/USDT',
+  'SOL/USDT',
+  'AVAX/USDT',
+  'DOGE/USDT',
+  'LINK/USDT',
+  'XRP/USDT',
+  'BNB/USDT',
+  'ARB/USDT'
+];
 const AVAILABLE_TIMEFRAMES: Timeframe[] = ['1m', '5m', '15m', '1h', '4h', '1d'];
+const CHART_REFRESH_MS = 6000;
+const CHART_MAX_BACKOFF_MS = 30000;
+const CHART_STALE_SEC = 20;
 
 export const ProMarketChart: React.FC<ProMarketChartProps> = ({
   exchange,
@@ -66,11 +80,33 @@ export const ProMarketChart: React.FC<ProMarketChartProps> = ({
   const mainChartRef = useRef<IChartApi | null>(null);
   const oscChartRef = useRef<IChartApi | null>(null);
 
+  const candleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
+  const volumeSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null);
+  const ema9SeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
+  const ema21SeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
+  const vwapSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
+  const bbUpperRef = useRef<ISeriesApi<'Line'> | null>(null);
+  const bbLowerRef = useRef<ISeriesApi<'Line'> | null>(null);
+  const priceLinesRef = useRef<IPriceLine[]>([]);
+  const candleMapRef = useRef<Map<number, CandleBar>>(new Map());
+  const shouldFitRef = useRef(true);
+
+  const oscRsiRef = useRef<ISeriesApi<'Line'> | null>(null);
+  const oscHistRef = useRef<ISeriesApi<'Histogram'> | null>(null);
+  const oscMacdRef = useRef<ISeriesApi<'Line'> | null>(null);
+  const oscSigRef = useRef<ISeriesApi<'Line'> | null>(null);
+  const oscAtrRef = useRef<ISeriesApi<'Line'> | null>(null);
+
   const [candles, setCandles] = useState<CandleBar[]>([]);
-  const [dataSource, setDataSource] = useState<'fast_api' | 'demo_deterministic'>('demo_deterministic');
+  const [dataSource, setDataSource] = useState<'fast_api' | 'demo_deterministic'>('fast_api');
+  const [backendSource, setBackendSource] = useState<string>('exchange_rest');
+  const [exchangeHealthy, setExchangeHealthy] = useState<boolean>(true);
+  const [lastUpdatedMs, setLastUpdatedMs] = useState<number>(0);
+  const [nowMs, setNowMs] = useState<number>(() => Date.now());
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [autoRefresh, setAutoRefresh] = useState(true);
 
   // Overlays & Oscillators
   const [showEma, setShowEma] = useState(true);
@@ -83,40 +119,132 @@ export const ProMarketChart: React.FC<ProMarketChartProps> = ({
   const [hoveredBar, setHoveredBar] = useState<CandleBar | null>(null);
 
   const candleAbortRef = useRef<AbortController | null>(null);
+  const inFlightRef = useRef(false);
+  const reqSeqRef = useRef(0);
+  const backoffMsRef = useRef(CHART_REFRESH_MS);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const candlesRef = useRef<CandleBar[]>([]);
+  candlesRef.current = candles;
 
-  const loadCandles = useCallback(async () => {
-    candleAbortRef.current?.abort();
-    const controller = new AbortController();
-    candleAbortRef.current = controller;
+  const loadCandles = useCallback(
+    async (opts?: { incremental?: boolean; force?: boolean }) => {
+      const force = Boolean(opts?.force);
+      if (inFlightRef.current && !force) return;
+      if (force) {
+        candleAbortRef.current?.abort();
+      }
+      const controller = new AbortController();
+      candleAbortRef.current = controller;
+      inFlightRef.current = true;
+      const mySeq = ++reqSeqRef.current;
 
-    setLoading(true);
-    setErrorMsg(null);
-    try {
-      const res = await quantApi.getCandles(exchange, marketType, symbol, timeframe, initData, controller.signal);
-      if (!controller.signal.aborted) {
-        setCandles(res.candles);
+      const currentBars = candlesRef.current;
+      const lastBar = currentBars[currentBars.length - 1];
+      const useIncremental = Boolean(opts?.incremental && lastBar && lastBar.time > 0);
+      if (!useIncremental && currentBars.length === 0) {
+        setLoading(true);
+      }
+
+      try {
+        const res = await quantApi.getCandles(
+          exchange,
+          marketType,
+          symbol,
+          timeframe,
+          initData,
+          controller.signal,
+          useIncremental ? { sinceSec: lastBar.time, limit: 10 } : { limit: 120 }
+        );
+        if (controller.signal.aborted || mySeq !== reqSeqRef.current) return;
+
+        setCandles((prev) => {
+          const merged = new Map<number, CandleBar>();
+          if (useIncremental) {
+            for (const bar of prev) merged.set(bar.time, bar);
+          }
+          for (const bar of res.candles) {
+            if (bar.time > 0) merged.set(bar.time, bar);
+          }
+          return Array.from(merged.values())
+            .sort((a, b) => a.time - b.time)
+            .slice(-240);
+        });
         setDataSource(res.source);
-      }
-    } catch (err) {
-      if (err instanceof DOMException && err.name === 'AbortError') return;
-      if (!controller.signal.aborted) {
+        setBackendSource(res.backend_source || (res.source === 'fast_api' ? 'exchange_rest' : 'demo'));
+        setExchangeHealthy(res.exchange_healthy !== false && !res.stale);
+        setLastUpdatedMs(Date.now());
+        setErrorMsg(null);
+        backoffMsRef.current = CHART_REFRESH_MS;
+      } catch (err) {
+        if (err instanceof DOMException && err.name === 'AbortError') return;
+        if (controller.signal.aborted || mySeq !== reqSeqRef.current) return;
+        backoffMsRef.current = Math.min(backoffMsRef.current * 2, CHART_MAX_BACKOFF_MS);
         setErrorMsg(err instanceof Error ? err.message : 'Failed to fetch market candles');
+      } finally {
+        if (mySeq === reqSeqRef.current) {
+          inFlightRef.current = false;
+          setLoading(false);
+        }
       }
-    } finally {
-      if (!controller.signal.aborted) {
-        setLoading(false);
-      }
-    }
-  }, [exchange, marketType, symbol, timeframe, initData]);
+    },
+    [exchange, marketType, symbol, timeframe, initData]
+  );
 
+  // Reset candles & cancel obsolete requests immediately on market/timeframe switch
   useEffect(() => {
-    loadCandles();
+    candleAbortRef.current?.abort();
+    inFlightRef.current = false;
+    reqSeqRef.current += 1;
+    backoffMsRef.current = CHART_REFRESH_MS;
+    shouldFitRef.current = true;
+    setCandles([]);
+    setHoveredBar(null);
+    setErrorMsg(null);
+    setLastUpdatedMs(0);
+    loadCandles({ incremental: false, force: true });
+
     return () => {
       candleAbortRef.current?.abort();
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
     };
   }, [loadCandles]);
 
-  // Compute real technical indicators strictly from timestamped candles
+  // Bounded 6s auto-refresh loop when visible
+  useEffect(() => {
+    let cancelled = false;
+    const schedule = () => {
+      if (cancelled) return;
+      if (timerRef.current) clearTimeout(timerRef.current);
+      if (!autoRefresh) return;
+      timerRef.current = setTimeout(async () => {
+        if (cancelled) return;
+        if (document.visibilityState === 'visible') {
+          await loadCandles({ incremental: candlesRef.current.length > 0, force: false });
+        }
+        schedule();
+      }, backoffMsRef.current);
+    };
+    schedule();
+
+    const onVis = () => {
+      if (document.visibilityState === 'visible' && autoRefresh) {
+        loadCandles({ incremental: candlesRef.current.length > 0, force: false });
+      }
+    };
+    document.addEventListener('visibilitychange', onVis);
+    const clock = setInterval(() => setNowMs(Date.now()), 2000);
+
+    return () => {
+      cancelled = true;
+      if (timerRef.current) clearTimeout(timerRef.current);
+      document.removeEventListener('visibilitychange', onVis);
+      clearInterval(clock);
+    };
+  }, [autoRefresh, loadCandles]);
+
   const indicators = useMemo(() => {
     return {
       ema9: calculateEMA(candles, 9),
@@ -132,11 +260,13 @@ export const ProMarketChart: React.FC<ProMarketChartProps> = ({
 
   const latestBar = hoveredBar || (candles.length > 0 ? candles[candles.length - 1] : null);
   const latestRsi = indicators.rsi.length > 0 ? indicators.rsi[indicators.rsi.length - 1].value : null;
+  const ageSec = lastUpdatedMs > 0 ? Math.max(0, Math.floor((nowMs - lastUpdatedMs) / 1000)) : null;
+  const isStale = Boolean(errorMsg) || !exchangeHealthy || (ageSec !== null && ageSec > CHART_STALE_SEC);
 
-  // Main Candlestick + Volume + Overlays Chart
+  // Create Main Chart instance once per structural config (keeps pan/zoom across ticks!)
   useEffect(() => {
     const container = mainContainerRef.current;
-    if (!container || candles.length === 0) return;
+    if (!container) return;
 
     const chart = createChart(container, {
       width: container.clientWidth,
@@ -155,22 +285,15 @@ export const ProMarketChart: React.FC<ProMarketChartProps> = ({
         vertLine: { color: 'rgba(0, 229, 255, 0.45)', width: 1, style: 2 },
         horzLine: { color: 'rgba(0, 229, 255, 0.45)', width: 1, style: 2 }
       },
-      rightPriceScale: {
-        borderColor: 'rgba(148, 163, 184, 0.14)'
-      },
-      timeScale: {
-        borderColor: 'rgba(148, 163, 184, 0.14)',
-        timeVisible: true,
-        secondsVisible: false
-      },
+      rightPriceScale: { borderColor: 'rgba(148, 163, 184, 0.14)' },
+      timeScale: { borderColor: 'rgba(148, 163, 184, 0.14)', timeVisible: true, secondsVisible: false },
       handleScroll: { mouseWheel: true, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: false },
       handleScale: { axisPressedMouseMove: true, mouseWheel: true, pinch: true }
     });
 
     mainChartRef.current = chart;
 
-    // Candlestick Series
-    const candleSeries = chart.addSeries(CandlestickSeries, {
+    candleSeriesRef.current = chart.addSeries(CandlestickSeries, {
       upColor: '#10B981',
       downColor: '#EF4444',
       borderUpColor: '#10B981',
@@ -179,141 +302,34 @@ export const ProMarketChart: React.FC<ProMarketChartProps> = ({
       wickDownColor: '#EF4444'
     });
 
-    candleSeries.setData(
-      candles.map((c) => ({
-        time: c.time as Time,
-        open: c.open,
-        high: c.high,
-        low: c.low,
-        close: c.close
-      }))
-    );
-
-    // Volume Histogram Overlay
-    const volumeSeries = chart.addSeries(HistogramSeries, {
+    volumeSeriesRef.current = chart.addSeries(HistogramSeries, {
       priceFormat: { type: 'volume' },
       priceScaleId: 'volume'
     });
-    chart.priceScale('volume').applyOptions({
-      scaleMargins: { top: 0.82, bottom: 0 }
-    });
-    volumeSeries.setData(
-      candles.map((c) => ({
-        time: c.time as Time,
-        value: c.volume,
-        color: c.close >= c.open ? 'rgba(16, 185, 129, 0.28)' : 'rgba(239, 68, 68, 0.28)'
-      }))
-    );
+    chart.priceScale('volume').applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
 
-    // EMA 9 & 21 Overlays
-    if (showEma && indicators.ema9.length > 0) {
-      const ema9Series = chart.addSeries(LineSeries, {
-        color: '#00E5FF',
-        lineWidth: 1,
-        priceLineVisible: false,
-        lastValueVisible: false
-      });
-      ema9Series.setData(indicators.ema9.map((p) => ({ time: p.time as Time, value: p.value })));
-
-      const ema21Series = chart.addSeries(LineSeries, {
-        color: '#8B5CF6',
-        lineWidth: 1,
-        priceLineVisible: false,
-        lastValueVisible: false
-      });
-      ema21Series.setData(indicators.ema21.map((p) => ({ time: p.time as Time, value: p.value })));
-    }
-
-    // VWAP Overlay
-    if (showVwap && indicators.vwap.length > 0) {
-      const vwapSeries = chart.addSeries(LineSeries, {
-        color: '#F59E0B',
-        lineWidth: 1,
-        lineStyle: 2,
-        priceLineVisible: false,
-        lastValueVisible: false
-      });
-      vwapSeries.setData(indicators.vwap.map((p) => ({ time: p.time as Time, value: p.value })));
-    }
-
-    // Bollinger Bands Overlay
-    if (showBollinger && indicators.bb.length > 0) {
-      const bbUpper = chart.addSeries(LineSeries, {
-        color: 'rgba(148, 163, 184, 0.5)',
-        lineWidth: 1,
-        lineStyle: 1,
-        priceLineVisible: false,
-        lastValueVisible: false
-      });
-      const bbLower = chart.addSeries(LineSeries, {
-        color: 'rgba(148, 163, 184, 0.5)',
-        lineWidth: 1,
-        lineStyle: 1,
-        priceLineVisible: false,
-        lastValueVisible: false
-      });
-      bbUpper.setData(indicators.bb.map((p) => ({ time: p.time as Time, value: p.upper })));
-      bbLower.setData(indicators.bb.map((p) => ({ time: p.time as Time, value: p.lower })));
-    }
-
-    // Support & Resistance Lines
-    if (showSR) {
-      indicators.srLevels.forEach((lvl) => {
-        candleSeries.createPriceLine({
-          price: lvl.price,
-          color: lvl.type === 'RESISTANCE' ? 'rgba(239, 68, 68, 0.45)' : 'rgba(16, 185, 129, 0.45)',
-          lineWidth: 1,
-          lineStyle: 3,
-          axisLabelVisible: true,
-          title: lvl.type === 'RESISTANCE' ? 'RES' : 'SUP'
-        });
-      });
-    }
-
-    // Position Entry / SL / TP Price Lines
-    if (activePosition && activePosition.symbol === symbol) {
-      candleSeries.createPriceLine({
-        price: activePosition.entry_price,
-        color: '#00E5FF',
-        lineWidth: 2,
-        lineStyle: 0,
-        axisLabelVisible: true,
-        title: `ENTRY (${activePosition.side})`
-      });
-      if (activePosition.stop_loss) {
-        candleSeries.createPriceLine({
-          price: activePosition.stop_loss,
-          color: '#EF4444',
-          lineWidth: 1,
-          lineStyle: 2,
-          axisLabelVisible: true,
-          title: 'SL'
-        });
-      }
-      if (activePosition.take_profit) {
-        candleSeries.createPriceLine({
-          price: activePosition.take_profit,
-          color: '#10B981',
-          lineWidth: 1,
-          lineStyle: 2,
-          axisLabelVisible: true,
-          title: 'TP'
-        });
-      }
-    }
-
-    chart.timeScale().fitContent();
-
-    // Crosshair hover sync
-    const candleMap = new Map<number, CandleBar>();
-    candles.forEach((c) => candleMap.set(c.time, c));
+    ema9SeriesRef.current = showEma
+      ? chart.addSeries(LineSeries, { color: '#00E5FF', lineWidth: 1, priceLineVisible: false, lastValueVisible: false })
+      : null;
+    ema21SeriesRef.current = showEma
+      ? chart.addSeries(LineSeries, { color: '#8B5CF6', lineWidth: 1, priceLineVisible: false, lastValueVisible: false })
+      : null;
+    vwapSeriesRef.current = showVwap
+      ? chart.addSeries(LineSeries, { color: '#F59E0B', lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false })
+      : null;
+    bbUpperRef.current = showBollinger
+      ? chart.addSeries(LineSeries, { color: 'rgba(148, 163, 184, 0.5)', lineWidth: 1, lineStyle: 1, priceLineVisible: false, lastValueVisible: false })
+      : null;
+    bbLowerRef.current = showBollinger
+      ? chart.addSeries(LineSeries, { color: 'rgba(148, 163, 184, 0.5)', lineWidth: 1, lineStyle: 1, priceLineVisible: false, lastValueVisible: false })
+      : null;
 
     chart.subscribeCrosshairMove((param) => {
       if (!param.time) {
         setHoveredBar(null);
         return;
       }
-      const bar = candleMap.get(Number(param.time));
+      const bar = candleMapRef.current.get(Number(param.time));
       if (bar) setHoveredBar(bar);
     });
 
@@ -327,15 +343,119 @@ export const ProMarketChart: React.FC<ProMarketChartProps> = ({
 
     return () => {
       resizeObserver.disconnect();
+      priceLinesRef.current = [];
+      candleSeriesRef.current = null;
+      volumeSeriesRef.current = null;
+      ema9SeriesRef.current = null;
+      ema21SeriesRef.current = null;
+      vwapSeriesRef.current = null;
+      bbUpperRef.current = null;
+      bbLowerRef.current = null;
       chart.remove();
       mainChartRef.current = null;
     };
-  }, [candles, indicators, showEma, showVwap, showBollinger, showSR, activePosition, symbol, isFullscreen, compact]);
+  }, [showEma, showVwap, showBollinger, isFullscreen, compact]);
 
-  // Oscillator Sub-Chart (RSI / MACD / ATR)
+  // Update Main Chart series data in-place (preserves pan/zoom across live ticks)
+  useEffect(() => {
+    const chart = mainChartRef.current;
+    const candleSeries = candleSeriesRef.current;
+    const volumeSeries = volumeSeriesRef.current;
+    if (!chart || !candleSeries || !volumeSeries) return;
+
+    const map = new Map<number, CandleBar>();
+    candles.forEach((c) => map.set(c.time, c));
+    candleMapRef.current = map;
+
+    candleSeries.setData(
+      candles.map((c) => ({ time: c.time as Time, open: c.open, high: c.high, low: c.low, close: c.close }))
+    );
+    volumeSeries.setData(
+      candles.map((c) => ({
+        time: c.time as Time,
+        value: c.volume,
+        color: c.close >= c.open ? 'rgba(16, 185, 129, 0.28)' : 'rgba(239, 68, 68, 0.28)'
+      }))
+    );
+
+    ema9SeriesRef.current?.setData(indicators.ema9.map((p) => ({ time: p.time as Time, value: p.value })));
+    ema21SeriesRef.current?.setData(indicators.ema21.map((p) => ({ time: p.time as Time, value: p.value })));
+    vwapSeriesRef.current?.setData(indicators.vwap.map((p) => ({ time: p.time as Time, value: p.value })));
+    bbUpperRef.current?.setData(indicators.bb.map((p) => ({ time: p.time as Time, value: p.upper })));
+    bbLowerRef.current?.setData(indicators.bb.map((p) => ({ time: p.time as Time, value: p.lower })));
+
+    // Refresh price lines (S/R + active position)
+    for (const pl of priceLinesRef.current) {
+      try {
+        candleSeries.removePriceLine(pl);
+      } catch {
+        // ignore already removed
+      }
+    }
+    priceLinesRef.current = [];
+
+    if (showSR) {
+      indicators.srLevels.forEach((lvl) => {
+        priceLinesRef.current.push(
+          candleSeries.createPriceLine({
+            price: lvl.price,
+            color: lvl.type === 'RESISTANCE' ? 'rgba(239, 68, 68, 0.45)' : 'rgba(16, 185, 129, 0.45)',
+            lineWidth: 1,
+            lineStyle: 3,
+            axisLabelVisible: true,
+            title: lvl.type === 'RESISTANCE' ? 'RES' : 'SUP'
+          })
+        );
+      });
+    }
+
+    if (activePosition && activePosition.symbol === symbol) {
+      priceLinesRef.current.push(
+        candleSeries.createPriceLine({
+          price: activePosition.entry_price,
+          color: '#00E5FF',
+          lineWidth: 2,
+          lineStyle: 0,
+          axisLabelVisible: true,
+          title: `ENTRY (${activePosition.side})`
+        })
+      );
+      if (activePosition.stop_loss) {
+        priceLinesRef.current.push(
+          candleSeries.createPriceLine({
+            price: activePosition.stop_loss,
+            color: '#EF4444',
+            lineWidth: 1,
+            lineStyle: 2,
+            axisLabelVisible: true,
+            title: 'SL'
+          })
+        );
+      }
+      if (activePosition.take_profit) {
+        priceLinesRef.current.push(
+          candleSeries.createPriceLine({
+            price: activePosition.take_profit,
+            color: '#10B981',
+            lineWidth: 1,
+            lineStyle: 2,
+            axisLabelVisible: true,
+            title: 'TP'
+          })
+        );
+      }
+    }
+
+    if (candles.length > 0 && shouldFitRef.current) {
+      chart.timeScale().fitContent();
+      shouldFitRef.current = false;
+    }
+  }, [candles, indicators, showSR, activePosition, symbol]);
+
+  // Oscillator Sub-Chart instance
   useEffect(() => {
     const container = oscContainerRef.current;
-    if (!container || oscillator === 'none' || candles.length === 0) return;
+    if (!container || oscillator === 'none') return;
 
     const oscChart = createChart(container, {
       width: container.clientWidth,
@@ -350,57 +470,31 @@ export const ProMarketChart: React.FC<ProMarketChartProps> = ({
         vertLines: { color: 'rgba(148, 163, 184, 0.05)' },
         horzLines: { color: 'rgba(148, 163, 184, 0.05)' }
       },
-      rightPriceScale: {
-        borderColor: 'rgba(148, 163, 184, 0.14)'
-      },
-      timeScale: {
-        borderColor: 'rgba(148, 163, 184, 0.14)',
-        timeVisible: true
-      }
+      rightPriceScale: { borderColor: 'rgba(148, 163, 184, 0.14)' },
+      timeScale: { borderColor: 'rgba(148, 163, 184, 0.14)', timeVisible: true }
     });
 
     oscChartRef.current = oscChart;
 
-    if (oscillator === 'rsi' && indicators.rsi.length > 0) {
-      const rsiSeries = oscChart.addSeries(LineSeries, {
-        color: '#8B5CF6',
-        lineWidth: 2
-      });
-      rsiSeries.setData(indicators.rsi.map((p) => ({ time: p.time as Time, value: p.value })));
+    if (oscillator === 'rsi') {
+      const rsiSeries = oscChart.addSeries(LineSeries, { color: '#8B5CF6', lineWidth: 2 });
       rsiSeries.createPriceLine({ price: 70, color: 'rgba(239, 68, 68, 0.4)', lineWidth: 1, lineStyle: 2, axisLabelVisible: false, title: '70' });
       rsiSeries.createPriceLine({ price: 30, color: 'rgba(16, 185, 129, 0.4)', lineWidth: 1, lineStyle: 2, axisLabelVisible: false, title: '30' });
-    } else if (oscillator === 'macd' && indicators.macd.length > 0) {
-      const histSeries = oscChart.addSeries(HistogramSeries, {});
-      histSeries.setData(
-        indicators.macd.map((p) => ({
-          time: p.time as Time,
-          value: p.histogram,
-          color: p.histogram >= 0 ? 'rgba(16, 185, 129, 0.55)' : 'rgba(239, 68, 68, 0.55)'
-        }))
-      );
-      const macdLine = oscChart.addSeries(LineSeries, { color: '#00E5FF', lineWidth: 1, priceLineVisible: false });
-      const sigLine = oscChart.addSeries(LineSeries, { color: '#F59E0B', lineWidth: 1, priceLineVisible: false });
-      macdLine.setData(indicators.macd.map((p) => ({ time: p.time as Time, value: p.macd })));
-      sigLine.setData(indicators.macd.map((p) => ({ time: p.time as Time, value: p.signal })));
-    } else if (oscillator === 'atr' && indicators.atr.length > 0) {
-      const atrSeries = oscChart.addSeries(LineSeries, {
-        color: '#00E5FF',
-        lineWidth: 2
-      });
-      atrSeries.setData(indicators.atr.map((p) => ({ time: p.time as Time, value: p.value })));
+      oscRsiRef.current = rsiSeries;
+    } else if (oscillator === 'macd') {
+      oscHistRef.current = oscChart.addSeries(HistogramSeries, {});
+      oscMacdRef.current = oscChart.addSeries(LineSeries, { color: '#00E5FF', lineWidth: 1, priceLineVisible: false });
+      oscSigRef.current = oscChart.addSeries(LineSeries, { color: '#F59E0B', lineWidth: 1, priceLineVisible: false });
+    } else if (oscillator === 'atr') {
+      oscAtrRef.current = oscChart.addSeries(LineSeries, { color: '#00E5FF', lineWidth: 2 });
     }
 
-    oscChart.timeScale().fitContent();
-
-    // Sync time scale movement from main chart
     const main = mainChartRef.current;
     let unsub: (() => void) | null = null;
     if (main) {
       const handler = () => {
         const range = main.timeScale().getVisibleLogicalRange();
-        if (range) {
-          oscChart.timeScale().setVisibleLogicalRange(range);
-        }
+        if (range) oscChart.timeScale().setVisibleLogicalRange(range);
       };
       main.timeScale().subscribeVisibleLogicalRangeChange(handler);
       unsub = () => main.timeScale().unsubscribeVisibleLogicalRangeChange(handler);
@@ -408,19 +502,40 @@ export const ProMarketChart: React.FC<ProMarketChartProps> = ({
 
     const resizeObserver = new ResizeObserver((entries) => {
       const width = entries[0]?.contentRect.width;
-      if (width && width > 0) {
-        oscChart.applyOptions({ width: Math.floor(width) });
-      }
+      if (width && width > 0) oscChart.applyOptions({ width: Math.floor(width) });
     });
     resizeObserver.observe(container);
 
     return () => {
       if (unsub) unsub();
       resizeObserver.disconnect();
+      oscRsiRef.current = null;
+      oscHistRef.current = null;
+      oscMacdRef.current = null;
+      oscSigRef.current = null;
+      oscAtrRef.current = null;
       oscChart.remove();
       oscChartRef.current = null;
     };
-  }, [oscillator, indicators, candles]);
+  }, [oscillator]);
+
+  useEffect(() => {
+    if (oscillator === 'rsi' && oscRsiRef.current) {
+      oscRsiRef.current.setData(indicators.rsi.map((p) => ({ time: p.time as Time, value: p.value })));
+    } else if (oscillator === 'macd') {
+      oscHistRef.current?.setData(
+        indicators.macd.map((p) => ({
+          time: p.time as Time,
+          value: p.histogram,
+          color: p.histogram >= 0 ? 'rgba(16, 185, 129, 0.55)' : 'rgba(239, 68, 68, 0.55)'
+        }))
+      );
+      oscMacdRef.current?.setData(indicators.macd.map((p) => ({ time: p.time as Time, value: p.macd })));
+      oscSigRef.current?.setData(indicators.macd.map((p) => ({ time: p.time as Time, value: p.signal })));
+    } else if (oscillator === 'atr' && oscAtrRef.current) {
+      oscAtrRef.current.setData(indicators.atr.map((p) => ({ time: p.time as Time, value: p.value })));
+    }
+  }, [oscillator, indicators]);
 
   const handleResetZoom = () => {
     mainChartRef.current?.timeScale().fitContent();
@@ -433,10 +548,9 @@ export const ProMarketChart: React.FC<ProMarketChartProps> = ({
         isFullscreen ? 'fixed inset-3 z-50 bg-[#05080F] shadow-2xl' : ''
       }`}
     >
-      {/* Top Toolbar: Exchange, Market, Symbol, Timeframe, Fullscreen */}
+      {/* Top Toolbar */}
       <div className="px-4 py-3 border-b border-white/[0.08] flex flex-wrap items-center justify-between gap-2 bg-[#0B1120]/90">
         <div className="flex flex-wrap items-center gap-2">
-          {/* Exchange Selector */}
           {onExchangeChange && (
             <div className="flex items-center p-0.5 rounded-lg bg-[#05080F] border border-white/[0.08]">
               {(['binance', 'bybit', 'okx'] as ExchangeId[]).map((ex) => (
@@ -444,9 +558,7 @@ export const ProMarketChart: React.FC<ProMarketChartProps> = ({
                   key={ex}
                   onClick={() => onExchangeChange(ex)}
                   className={`px-2.5 py-1 min-h-[32px] rounded-md text-xs font-medium uppercase whitespace-nowrap shrink-0 transition-colors ${
-                    exchange === ex
-                      ? 'bg-[#00E5FF]/20 text-[#00E5FF]'
-                      : 'text-slate-400 hover:text-white'
+                    exchange === ex ? 'bg-[#00E5FF]/20 text-[#00E5FF]' : 'text-slate-400 hover:text-white'
                   }`}
                 >
                   {ex}
@@ -455,7 +567,6 @@ export const ProMarketChart: React.FC<ProMarketChartProps> = ({
             </div>
           )}
 
-          {/* Market Type Selector */}
           {onMarketTypeChange && (
             <div className="flex items-center p-0.5 rounded-lg bg-[#05080F] border border-white/[0.08]">
               {(['spot', 'futures'] as MarketType[]).map((mt) => (
@@ -463,9 +574,7 @@ export const ProMarketChart: React.FC<ProMarketChartProps> = ({
                   key={mt}
                   onClick={() => onMarketTypeChange(mt)}
                   className={`px-2.5 py-1 min-h-[32px] rounded-md text-xs font-medium capitalize whitespace-nowrap shrink-0 transition-colors ${
-                    marketType === mt
-                      ? 'bg-[#8B5CF6]/25 text-white'
-                      : 'text-slate-400 hover:text-white'
+                    marketType === mt ? 'bg-[#8B5CF6]/25 text-white' : 'text-slate-400 hover:text-white'
                   }`}
                 >
                   {mt}
@@ -474,7 +583,6 @@ export const ProMarketChart: React.FC<ProMarketChartProps> = ({
             </div>
           )}
 
-          {/* Symbol Dropdown */}
           {onSymbolChange ? (
             <select
               value={symbol}
@@ -492,7 +600,6 @@ export const ProMarketChart: React.FC<ProMarketChartProps> = ({
             <span className="text-xs font-mono font-semibold text-white px-2">{symbol}</span>
           )}
 
-          {/* Timeframe Selector */}
           {onTimeframeChange && (
             <div className="flex items-center p-0.5 rounded-lg bg-[#05080F] border border-white/[0.08]">
               {AVAILABLE_TIMEFRAMES.map((tf) => (
@@ -500,9 +607,7 @@ export const ProMarketChart: React.FC<ProMarketChartProps> = ({
                   key={tf}
                   onClick={() => onTimeframeChange(tf)}
                   className={`px-2 py-1 min-h-[32px] rounded text-[11px] font-mono whitespace-nowrap shrink-0 transition-colors ${
-                    timeframe === tf
-                      ? 'bg-white/15 text-[#00E5FF] font-semibold'
-                      : 'text-slate-400 hover:text-white'
+                    timeframe === tf ? 'bg-white/15 text-[#00E5FF] font-semibold' : 'text-slate-400 hover:text-white'
                   }`}
                 >
                   {tf}
@@ -512,10 +617,20 @@ export const ProMarketChart: React.FC<ProMarketChartProps> = ({
           )}
         </div>
 
-        {/* Chart Actions */}
         <div className="flex items-center gap-1.5">
           <button
-            onClick={loadCandles}
+            onClick={() => setAutoRefresh((v) => !v)}
+            className={`px-2.5 py-1 min-h-[34px] rounded-lg text-[11px] font-mono border transition-colors ${
+              autoRefresh
+                ? 'border-[#10B981]/50 text-[#10B981] bg-[#10B981]/10'
+                : 'border-white/10 text-slate-400 bg-[#05080F]'
+            }`}
+            title="Toggle 6s automatic chart refresh"
+          >
+            {autoRefresh ? 'AUTO 6s' : 'PAUSED'}
+          </button>
+          <button
+            onClick={() => loadCandles({ incremental: false, force: true })}
             className="p-2 min-h-[34px] min-w-[34px] flex items-center justify-center rounded-lg text-slate-400 hover:text-white hover:bg-white/5 transition-colors"
             title="Refresh candles"
           >
@@ -540,12 +655,11 @@ export const ProMarketChart: React.FC<ProMarketChartProps> = ({
 
       {/* Indicator Controls & Crosshair OHLCV Strip */}
       <div className="px-4 py-2 border-b border-white/[0.06] bg-[#05080F]/90 flex flex-wrap items-center justify-between gap-2 text-[11px] font-mono">
-        {/* Live OHLCV Crosshair Readout */}
         <div className="flex flex-wrap items-center gap-3 text-slate-400">
           {latestBar ? (
             <>
               <span className="text-slate-300 font-semibold">
-                {exchange.toUpperCase()} {symbol} · {timeframe}
+                {exchange.toUpperCase()} {symbol} · {marketType.toUpperCase()} · {timeframe}
               </span>
               <span>O <strong className="text-white">{formatPrice(latestBar.open)}</strong></span>
               <span>H <strong className="text-[#10B981]">{formatPrice(latestBar.high)}</strong></span>
@@ -554,8 +668,10 @@ export const ProMarketChart: React.FC<ProMarketChartProps> = ({
               {latestRsi !== null && (
                 <span>RSI(14) <strong className="text-[#8B5CF6]">{latestRsi.toFixed(1)}</strong></span>
               )}
-              <span className="text-slate-500">
-                {dataSource === 'fast_api' ? 'Live Candles' : 'DEMO Candles'}
+              <span className={isStale ? 'text-amber-400' : 'text-[#10B981]'}>
+                {dataSource === 'fast_api' ? backendSource : 'DEMO'}
+                {lastUpdatedMs > 0 ? ` · ${new Date(lastUpdatedMs).toLocaleTimeString()} (${ageSec ?? 0}s)` : ''}
+                {isStale ? ' · STALE' : ''}
               </span>
             </>
           ) : (
@@ -563,7 +679,6 @@ export const ProMarketChart: React.FC<ProMarketChartProps> = ({
           )}
         </div>
 
-        {/* Overlay & Oscillator Toggles */}
         <div className="flex flex-wrap items-center gap-1.5">
           <button
             onClick={() => setShowEma(!showEma)}
@@ -597,9 +712,7 @@ export const ProMarketChart: React.FC<ProMarketChartProps> = ({
           >
             S/R
           </button>
-
           <span className="text-slate-600 mx-0.5">|</span>
-
           {(['none', 'rsi', 'macd', 'atr'] as OscillatorMode[]).map((mode) => (
             <button
               key={mode}
@@ -616,12 +729,21 @@ export const ProMarketChart: React.FC<ProMarketChartProps> = ({
         </div>
       </div>
 
+      {errorMsg && candles.length > 0 && (
+        <div className="px-4 py-1.5 bg-amber-500/10 border-b border-amber-500/30 text-[11px] font-mono text-amber-300 flex items-center justify-between gap-2">
+          <span>Feed stale ({errorMsg}) — retrying with backoff</span>
+          <button onClick={() => loadCandles({ incremental: false, force: true })} className="underline text-white">
+            Retry now
+          </button>
+        </div>
+      )}
+
       {/* Main Chart Viewport */}
-      {errorMsg ? (
+      {errorMsg && candles.length === 0 ? (
         <div className="p-10 text-center text-xs text-[#EF4444]">
           <p>{errorMsg}</p>
           <button
-            onClick={loadCandles}
+            onClick={() => loadCandles({ incremental: false, force: true })}
             className="mt-3 px-3 py-1.5 rounded bg-[#EF4444]/15 border border-[#EF4444]/40 text-white"
           >
             Retry Candles

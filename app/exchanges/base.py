@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 import threading
 import time
 from datetime import datetime, timezone
@@ -214,24 +215,36 @@ class BaseExchangeAdapter:
         market_type: MarketType,
         timeframe: str = "15m",
         limit: int = 150,
+        since: int | None = None,
     ) -> list[Candle]:
         norm = self.normalize_symbol(symbol, market_type)
-        raw = await self._run(
-            lambda: self._public_client.fetch_ohlcv(norm, timeframe=timeframe, limit=limit),
-            f"fetch_ohlcv:{norm}:{timeframe}",
-        )
-        return [
-            Candle(
-                timestamp=int(row[0]),
-                open=float(row[1]),
-                high=float(row[2]),
-                low=float(row[3]),
-                close=float(row[4]),
-                volume=float(row[5]),
-            )
-            for row in raw
-            if len(row) >= 6
-        ]
+
+        def _call() -> Any:
+            if since is None:
+                return self._public_client.fetch_ohlcv(norm, timeframe=timeframe, limit=limit)
+            try:
+                return self._public_client.fetch_ohlcv(
+                    norm, timeframe=timeframe, since=since, limit=limit
+                )
+            except TypeError:
+                return self._public_client.fetch_ohlcv(norm, timeframe=timeframe, limit=limit)
+
+        raw = await self._run(_call, f"fetch_ohlcv:{norm}:{timeframe}")
+        by_ts: dict[int, Candle] = {}
+        for row in raw or []:
+            if not row or len(row) < 6:
+                continue
+            try:
+                ts = int(row[0])
+                o, h, l, c, v = float(row[1]), float(row[2]), float(row[3]), float(row[4]), float(row[5])
+            except (TypeError, ValueError):
+                continue
+            if ts <= 0 or not all(math.isfinite(x) for x in (o, h, l, c, v)):
+                continue
+            if since is not None and ts < since:
+                continue
+            by_ts[ts] = Candle(timestamp=ts, open=o, high=h, low=l, close=c, volume=v)
+        return [by_ts[k] for k in sorted(by_ts.keys())]
 
     async def fetch_funding_rate(self, symbol: str) -> float | None:
         norm = self.normalize_symbol(symbol, MarketType.PERP)
