@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import math
 import sqlite3
 import threading
 from datetime import datetime, timezone
@@ -21,10 +22,12 @@ from app.core.models import (
     PaperPosition,
     Side,
     StrategySignal,
+    RiskDecision,
 )
 from app.core.security import assert_paper_only
 from app.persistence.database import PaperDatabase
 from app.risk.guardian import GlobalRiskGuardian
+from app.execution import paper_protection
 
 logger = logging.getLogger("multi_exchange.execution")
 
@@ -156,18 +159,51 @@ class PaperExecutionEngine:
 
             positions = self.db.list_positions()
             total_equity = self.total_portfolio_equity()
-            decision = self.risk.evaluate(
-                signal=signal,
-                requested_notional_usd=requested_notional_usd,
-                leverage=leverage,
-                total_equity_usd=total_equity,
-                positions=positions,
-                snapshot=snapshot,
-                exchange_healthy=exchange_healthy,
-            )
+            invalid = not math.isfinite(requested_notional_usd) or requested_notional_usd<=0 or not math.isfinite(leverage)
+            invalid = invalid or (signal.market_type==MarketType.PERP and leverage<1)
+            invalid = invalid or any(not math.isfinite(v) or v<=0 for v in [signal.entry_low,signal.entry_high,signal.stop_loss])
+            if snapshot is not None:
+                invalid = invalid or any(not math.isfinite(v) or v<=0 for v in [snapshot.last_price,snapshot.bid,snapshot.ask])
+                invalid = invalid or not math.isfinite(snapshot.spread_bps) or snapshot.spread_bps<0 or snapshot.bid>snapshot.ask
+                invalid = invalid or snapshot.timestamp.tzinfo is None
+                if snapshot.timestamp.tzinfo is not None:
+                    invalid = invalid or (snapshot.timestamp-datetime.now(timezone.utc)).total_seconds()>1
+            owned = next((p for p in positions if p.bot_id==bot_id and p.exchange==signal.exchange
+                and p.symbol==signal.symbol and p.market_type==signal.market_type),None)
+            opposite = owned is not None and owned.direction!=signal.direction
+            requested_qty = round(requested_notional_usd/snapshot.last_price,6) if not invalid and snapshot is not None else 0
+            if invalid:
+                decision = RiskDecision(approved=False,reason='invalid_execution_inputs')
+            elif snapshot is None:
+                decision = RiskDecision(approved=False,reason='missing_market_snapshot')
+            elif opposite and requested_qty<=owned.qty:
+                age = (datetime.now(timezone.utc)-snapshot.timestamp).total_seconds()
+                if not exchange_healthy or age>self.risk.policy.max_market_data_age_sec:
+                    decision = RiskDecision(approved=False,reason='unavailable_or_stale_reduction_quote')
+                else:
+                    # Reductions remain possible at exposure caps and during an
+                    # entry circuit breaker. They cannot create new exposure.
+                    decision = RiskDecision(approved=True,reason='reduce_only',adjusted_qty=requested_qty)
+            else:
+                closing_qty = owned.qty if opposite else 0
+                net_notional = max(0,requested_notional_usd-closing_qty*snapshot.last_price) if opposite else requested_notional_usd
+                decision = self.risk.evaluate(
+                    signal=signal, requested_notional_usd=net_notional, leverage=leverage,
+                    total_equity_usd=total_equity,
+                    positions=[p for p in positions if p.position_id!=owned.position_id] if opposite else positions,
+                    snapshot=snapshot, exchange_healthy=exchange_healthy)
+                if opposite and decision.approved:
+                    decision.adjusted_qty = round(decision.adjusted_qty+closing_qty,6)
+
+
+            try:
+                paper_protection.validate(signal)
+            except (ValueError, TypeError, OverflowError):
+                decision.approved = False
+                decision.reason = 'invalid_protection_plan'
 
             side = Side.BUY if signal.direction == Direction.LONG else Side.SELL
-            eff_leverage = leverage if signal.market_type == MarketType.PERP else 1.0
+            eff_leverage = leverage if signal.market_type == MarketType.PERP and math.isfinite(leverage) and leverage>=1 else 1.0
             order = PaperOrder(
                 client_order_id=client_order_id,
                 bot_id=bot_id,
@@ -179,8 +215,8 @@ class PaperExecutionEngine:
                 order_type=order_type,
                 requested_qty=decision.adjusted_qty if decision.approved else 0.0,
                 limit_price=limit_price,
-                stop_loss=signal.stop_loss,
-                take_profit=signal.take_profit_targets[0] if signal.take_profit_targets else None,
+                stop_loss=signal.stop_loss if math.isfinite(signal.stop_loss) and signal.stop_loss>0 else None,
+                take_profit=signal.take_profit_targets[0] if signal.take_profit_targets and math.isfinite(signal.take_profit_targets[0]) else None,
                 leverage=eff_leverage,
                 status=OrderStatus.CREATED,
                 is_paper=True,
@@ -191,6 +227,9 @@ class PaperExecutionEngine:
                 order.reject_reason = decision.reason
                 order.updated_at = datetime.now(timezone.utc)
                 with self.db.transaction() as conn:
+                    winner = self.db.get_order_by_client_id(client_order_id)
+                    if winner is not None:
+                        return winner
                     self.db.save_order(order, conn=conn)
                     self.db.log_audit(
                         "ORDER_REJECTED",
@@ -203,40 +242,47 @@ class PaperExecutionEngine:
             fee_sched = self.fee_schedule.get((signal.exchange, signal.market_type, signal.symbol)) or self.fee_schedule.get(
                 (signal.exchange, signal.market_type), {"maker": 0.0008, "taker": 0.0010}
             )
-            fee_rate = fee_sched['taker'] if self.marketable_limit_taker else (fee_sched["maker"] if order_type == OrderType.LIMIT else fee_sched["taker"])
+            # Immediate book/depth fills consume liquidity even when a limit is
+            # specified. A maker discount requires evidenced resting execution.
+            fee_rate = fee_sched['taker']
 
-            # Enforce free margin reservation check when bot account exists (skip for reducing/closing orders)
+            # A spot sell may reduce an owned long, never synthesize an unfunded short.
             acct = self.db.get_account(bot_id)
-            if acct is not None:
-                existing_pos = next(
-                    (
-                        p
-                        for p in positions
-                        if p.bot_id == bot_id
-                        and p.exchange == signal.exchange
-                        and p.symbol == signal.symbol
-                        and p.market_type == signal.market_type
-                    ),
-                    None,
-                )
-                is_reducing = existing_pos is not None and existing_pos.direction != signal.direction
-                if not is_reducing:
-                    free_cash = float(acct["cash_usd"]) - float(acct.get("reserved_margin_usd", 0.0) or 0.0)
-                    req_notional = order.requested_qty * snapshot.last_price
-                    req_margin = (req_notional / max(eff_leverage, 1.0)) + (req_notional * fee_rate)
-                    if free_cash < req_margin:
-                        order.status = OrderStatus.REJECTED
-                        order.reject_reason = "insufficient_free_margin"
-                        order.updated_at = datetime.now(timezone.utc)
-                        with self.db.transaction() as conn:
-                            self.db.save_order(order, conn=conn)
-                            self.db.log_audit(
-                                "ORDER_REJECTED",
-                                bot_id,
-                                {"order_id": order.order_id, "reason": order.reject_reason, "symbol": signal.symbol},
-                                conn=conn,
-                            )
-                        return order
+            existing_pos = next((p for p in positions if p.bot_id == bot_id
+                and p.exchange == signal.exchange and p.symbol == signal.symbol
+                and p.market_type == signal.market_type), None)
+            reject = None
+            if acct is None:
+                reject = 'paper_account_required'
+            elif signal.market_type == MarketType.SPOT and side == Side.SELL and (
+                    existing_pos is None or existing_pos.direction != Direction.LONG or
+                    order.requested_qty > existing_pos.qty + 1e-8):
+                reject = 'spot_short_or_oversell_not_supported'
+            elif existing_pos is not None and existing_pos.direction == signal.direction and abs(existing_pos.leverage-eff_leverage)>1e-9:
+                reject = 'position_leverage_change_requires_explicit_resize'
+            else:
+                free_cash = float(acct['cash_usd']) - float(acct.get('reserved_margin_usd',0) or 0)
+                if existing_pos is not None and existing_pos.direction != signal.direction:
+                    closed_qty = min(order.requested_qty, existing_pos.qty)
+                    residual = max(0.0, order.requested_qty-closed_qty)
+                    released = closed_qty*existing_pos.entry_price/existing_pos.leverage
+                    pnl = closed_qty*(snapshot.last_price-existing_pos.entry_price)*(1 if existing_pos.direction==Direction.LONG else -1)
+                    required = residual*snapshot.last_price/max(eff_leverage,1) + order.requested_qty*snapshot.last_price*fee_rate
+                    if residual>0 and free_cash+released+pnl < required:
+                        reject = 'insufficient_free_margin_for_reversal'
+                else:
+                    required = order.requested_qty*snapshot.last_price*(1/max(eff_leverage,1)+fee_rate)
+                    if free_cash < required:
+                        reject = 'insufficient_free_margin'
+            if reject is not None:
+                order.status, order.reject_reason = OrderStatus.REJECTED, reject
+                with self.db.transaction() as conn:
+                    winner = self.db.get_order_by_client_id(client_order_id)
+                    if winner is not None:
+                        return winner
+                    self.db.save_order(order,conn=conn)
+                    self.db.log_audit('ORDER_REJECTED',bot_id,{'order_id':order.order_id,'reason':reject},conn=conn)
+                return order
 
             slices = self._simulate_fill_slices(
                 requested_qty=order.requested_qty,
@@ -248,12 +294,53 @@ class PaperExecutionEngine:
                 limit_price=limit_price,
             )
 
+            if any(not all(math.isfinite(v) for v in item) or item[0]<=0 or item[1]<=0 or item[2]<0 for item in slices):
+                order.status, order.reject_reason = OrderStatus.REJECTED, 'unsupported_or_invalid_execution_precision'
+                with self.db.transaction() as conn:
+                    winner = self.db.get_order_by_client_id(client_order_id)
+                    if winner is not None:
+                        return winner
+                    self.db.save_order(order,conn=conn)
+                return order
+
             total_filled = 0.0
             total_cost = 0.0
             total_fee = 0.0
             weighted_slip = 0.0
 
             with self.db.transaction() as conn:
+                winner = self.db.get_order_by_client_id(client_order_id)
+                if winner is not None:
+                    return winner
+                # Recheck actual execution cost under the write transaction, not
+                # only the pre-fill mark-price estimate or a stale account row.
+                latest_account = self.db.get_account(bot_id)
+                latest_pos = next((p for p in self.db.list_positions(bot_id) if p.exchange==order.exchange
+                    and p.symbol==order.symbol and p.market_type==order.market_type),None)
+                signature = lambda p: None if p is None else (p.position_id,p.direction,p.qty,p.entry_price,p.leverage)
+                failure = None
+                if latest_account is None or signature(latest_pos)!=signature(existing_pos):
+                    failure = 'account_or_position_changed_before_execution'
+                else:
+                    executed_qty = sum(item[0] for item in slices)
+                    executed_cost = sum(item[0]*item[1] for item in slices)
+                    execution_fee = sum(item[2] for item in slices)
+                    free = latest_account['cash_usd']-latest_account['reserved_margin_usd']
+                    if executed_qty>0 and latest_pos is not None and latest_pos.direction!=signal.direction:
+                        closing = min(executed_qty,latest_pos.qty)
+                        residual = max(0,executed_qty-closing)
+                        average = executed_cost/executed_qty
+                        freed = closing*latest_pos.entry_price/latest_pos.leverage
+                        pnl = closing*(average-latest_pos.entry_price)*(1 if latest_pos.direction==Direction.LONG else -1)
+                        if residual>0 and free+freed+pnl < residual*average/eff_leverage+execution_fee:
+                            failure = 'insufficient_actual_execution_margin'
+                    elif free < executed_cost/max(eff_leverage,1)+execution_fee:
+                        failure = 'insufficient_actual_execution_margin'
+                if failure:
+                    order.status,order.reject_reason = OrderStatus.REJECTED,failure
+                    self.db.save_order(order,conn=conn)
+                    self.db.log_audit('ORDER_REJECTED',bot_id,{'order_id':order.order_id,'reason':failure},conn=conn)
+                    return order
                 order.status = OrderStatus.VALIDATED
                 self.db.save_order(order, conn=conn)
                 order.status = OrderStatus.SUBMITTED
@@ -292,6 +379,7 @@ class PaperExecutionEngine:
                     order.updated_at = datetime.now(timezone.utc)
                     self.db.save_order(order, conn=conn)
                     self._apply_fill_to_position_and_account(order, snapshot.last_price, conn=conn)
+                    paper_protection.install(self, signal, order, snapshot, conn)
                     self.db.log_audit(
                         "PAPER_ORDER_FILLED" if order.status == OrderStatus.FILLED else "PAPER_ORDER_PARTIAL_FILL",
                         bot_id,
@@ -347,7 +435,8 @@ class PaperExecutionEngine:
                 leverage=order.leverage,
                 stop_loss=order.stop_loss,
                 take_profit=order.take_profit,
-                unrealized_pnl_usd=0.0,
+                unrealized_pnl_usd=round((mark_price-order.avg_fill_price) * order.filled_qty *
+                                          (1 if direction == Direction.LONG else -1), 4),
                 is_paper=True,
             )
             self.db.upsert_position(pos, conn=conn)
@@ -370,8 +459,12 @@ class PaperExecutionEngine:
             )
             pos.qty = round(new_qty, 6)
             pos.mark_price = mark_price
-            pos.stop_loss = order.stop_loss or pos.stop_loss
+            if order.stop_loss is not None:
+                pos.stop_loss = order.stop_loss if pos.stop_loss is None else (
+                    max(pos.stop_loss,order.stop_loss) if pos.direction==Direction.LONG else min(pos.stop_loss,order.stop_loss))
             pos.take_profit = order.take_profit or pos.take_profit
+            pos.unrealized_pnl_usd = round((mark_price-pos.entry_price)*pos.qty*
+                                          (1 if pos.direction == Direction.LONG else -1), 4)
             pos.updated_at = datetime.now(timezone.utc)
             self.db.upsert_position(pos, conn=conn)
         else:
@@ -396,6 +489,7 @@ class PaperExecutionEngine:
             if remaining <= 1e-8:
                 pos.qty = 0.0
                 self.db.upsert_position(pos, conn=conn)
+                paper_protection.retire(self,pos.position_id,conn)
                 if residual_qty > 1e-8:
                     # Open opposite-direction position for executed reversal remainder so no filled qty disappears
                     new_margin = round((residual_qty * order.avg_fill_price) / max(order.leverage, 1.0), 6)
@@ -431,6 +525,8 @@ class PaperExecutionEngine:
                 pos.qty = remaining
                 pos.mark_price = mark_price
                 pos.realized_pnl_usd = round(pos.realized_pnl_usd + realized, 6)
+                pos.unrealized_pnl_usd = round((mark_price-pos.entry_price)*pos.qty*
+                                              (1 if pos.direction == Direction.LONG else -1), 4)
                 pos.updated_at = datetime.now(timezone.utc)
                 self.db.upsert_position(pos, conn=conn)
 
@@ -438,10 +534,14 @@ class PaperExecutionEngine:
         """Update unrealized PnL and trigger paper SL/TP exits deterministically."""
         closed_orders: list[PaperOrder] = []
         with self._lock:
+            handled, advanced_exits = paper_protection.process(self, snapshots)
+            closed_orders.extend(advanced_exits)
             for pos in self.db.list_positions():
+                if pos.position_id in handled:
+                    continue
                 key = f"{pos.exchange.value}:{pos.market_type.value}:{pos.symbol}"
                 snap = snapshots.get(key)
-                if snap is None:
+                if snap is None or not math.isfinite(snap.last_price) or snap.last_price<=0:
                     continue
                 px = snap.last_price
                 diff = (px - pos.entry_price) if pos.direction == Direction.LONG else (pos.entry_price - px)
@@ -534,6 +634,10 @@ class PaperExecutionEngine:
         for order in incomplete:
             fills = self.db.list_fills_for_order(order.order_id)
             filled_from_fills = round(sum(f.qty for f in fills), 6)
+            if filled_from_fills > 0:
+                order.avg_fill_price = round(sum(f.qty*f.price for f in fills)/filled_from_fills,6)
+                order.fee_usd = round(sum(f.fee_usd for f in fills),6)
+                order.slippage_bps = round(sum(f.qty*f.slippage_bps for f in fills)/filled_from_fills,3)
             if filled_from_fills > 0 and filled_from_fills >= round(order.requested_qty * 0.9999, 6):
                 order.filled_qty = filled_from_fills
                 order.status = OrderStatus.FILLED
@@ -550,16 +654,61 @@ class PaperExecutionEngine:
         self.db.log_audit("STARTUP_RECOVERY", "system", {"recovered_orders": recovered})
         return {"recovered_orders": recovered, "open_positions": len(self.db.list_positions())}
 
+    def cancel_paper_order(self, client_order_id: str) -> PaperOrder | None:
+        """Cancel only the unfilled remainder; executed quantity and cash never reverse."""
+        assert_paper_only('paper')
+        with self._lock, self.db.transaction() as conn:
+            order = self.db.get_order_by_client_id(client_order_id)
+            if order is None or order.status in {OrderStatus.FILLED,OrderStatus.CANCELED,OrderStatus.REJECTED}:
+                return order
+            order.status = OrderStatus.CANCELED
+            order.reject_reason = 'paper_unfilled_remainder_canceled'
+            order.updated_at = datetime.now(timezone.utc)
+            self.db.save_order(order,conn=conn)
+            self.db.log_audit('PAPER_ORDER_CANCELED',order.bot_id,
+                {'order_id':order.order_id,'filled_qty':order.filled_qty,'is_paper':True},conn=conn)
+            return order
+
     def reconcile_positions(self) -> dict[str, Any]:
-        """Verify all positions and accounts have valid paper invariants."""
+        """Check materialized cash, margin, P&L and fill equations; never certify history."""
         accounts = self.db.list_accounts()
         positions = self.db.list_positions()
-        orders = self.db.list_orders(limit=500)
-        non_paper = [o.order_id for o in orders if not o.is_paper]
-        return {
-            "accounts": len(accounts),
-            "open_positions": len(positions),
-            "checked_orders": len(orders),
-            "non_paper_violations": len(non_paper),
-            "reconciled": len(non_paper) == 0,
-        }
+        errors = []
+        with self.db._lock:
+            conn = self.db._conn
+            count = conn.execute('SELECT COUNT(*) FROM paper_orders').fetchone()[0]
+            non_paper = conn.execute('SELECT COUNT(*) FROM paper_orders WHERE is_paper!=1').fetchone()[0]
+            non_paper += conn.execute('SELECT COUNT(*) FROM paper_positions WHERE is_paper!=1').fetchone()[0]
+            rows = conn.execute("""SELECT o.order_id,o.filled_qty,o.avg_fill_price,o.fee_usd,
+                COALESCE(SUM(f.qty),0) AS quantity,COALESCE(SUM(f.qty*f.price),0) AS cost,
+                COALESCE(SUM(f.fee_usd),0) AS fees FROM paper_orders o
+                LEFT JOIN paper_fills f ON f.order_id=o.order_id GROUP BY o.order_id""").fetchall()
+            for row in rows:
+                if abs(row['filled_qty']-row['quantity'])>1e-6 or abs(row['fee_usd']-row['fees'])>1e-6:
+                    errors.append({'order_id':row['order_id'],'reason':'fill_quantity_or_fee_mismatch'})
+                elif row['quantity']>0 and abs(row['avg_fill_price']-row['cost']/row['quantity'])>1e-6:
+                    errors.append({'order_id':row['order_id'],'reason':'fill_vwap_mismatch'})
+        owners = {a['bot_id'] for a in accounts}
+        for account in accounts:
+            bot = account['bot_id']
+            values = [account[k] for k in ['cash_usd','initial_equity_usd','realized_pnl_usd','reserved_margin_usd']]
+            if not all(math.isfinite(v) for v in values):
+                errors.append({'bot_id':bot,'reason':'nonfinite_account'})
+                continue
+            if abs(account['cash_usd']-account['initial_equity_usd']-account['realized_pnl_usd'])>1e-5:
+                errors.append({'bot_id':bot,'reason':'cash_realized_equation'})
+            margin = sum(p.qty*p.entry_price/max(p.leverage,1) for p in positions if p.bot_id==bot)
+            if abs(account['reserved_margin_usd']-margin)>1e-5:
+                errors.append({'bot_id':bot,'reason':'reserved_margin_equation'})
+        for pos in positions:
+            if pos.bot_id not in owners or not all(math.isfinite(v) for v in [pos.qty,pos.entry_price,pos.mark_price,pos.leverage]) or min(pos.qty,pos.entry_price,pos.mark_price)<=0 or pos.leverage<1:
+                errors.append({'position_id':pos.position_id,'reason':'invalid_position'})
+                continue
+            unrealized = (pos.mark_price-pos.entry_price)*pos.qty*(1 if pos.direction==Direction.LONG else -1)
+            if abs(pos.unrealized_pnl_usd-round(unrealized,4))>1e-5:
+                errors.append({'position_id':pos.position_id,'reason':'stored_unrealized_equation'})
+        return {'accounts':len(accounts),'open_positions':len(positions),'checked_orders':count,
+                'non_paper_violations':non_paper,'equation_errors':errors,
+                'reconciled':non_paper==0 and not errors,
+                'historical_completeness_certified':False,
+                'scope':'materialized cash/margin/unrealized and order/fill equations; historical attribution is audited separately'}

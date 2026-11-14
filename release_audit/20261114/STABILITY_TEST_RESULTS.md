@@ -15,3 +15,5 @@ VERIFIED: existing monitoring timers are present; operating services were active
 NOT TESTED: production worker crash injection, database outage injection, intentional container restart, OAuth refresh recovery, and sustained mobile reconnection. Existing services were not restarted merely to claim a recovery pass. No running Docker containers were listed. A future end timestamp is a schedule, not a passing result. Analyze recorded failures before classifying the eventual window.
 
 Latest sample check (2026-11-14T14:41:45.019205+00:00): 172 samples spanning 4.7857 hours, one degraded sample, maximum gap 931.293478s; latest fill/position counts 1/1. Required 72-hour gate remains NOT PASSED. Historical journal exception classes include ValueError, NetworkError and ExchangeOutageError; error counts alone do not establish a root cause.
+
+Protection checkpoint (2026-11-14T15:13:39.628396+00:00): 194 samples across 5.3200 hours; one degraded sample; maximum gap 931.293478s. No pass. Observations concern the existing running version, not the undeployed protection candidate.

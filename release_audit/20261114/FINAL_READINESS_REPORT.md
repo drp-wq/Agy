@@ -10,9 +10,9 @@ Verdict: BLOCKED. This is an evidence-backed audit checkpoint, not a completed r
 |---|---|---|
 | Historical -82.214432 discrepancy | VERIFIED | Original 18 exits reproduced; unchanged source orders; current snapshot gap zero |
 | Economic funding | PARTIALLY VERIFIED | Signed-rate calculator, atomic posting and recovery tests; scheduler/history capture not integrated |
-| Full paper lifecycle | BLOCKED | Multi-level TP, trailing stop and liquidation coverage incomplete |
+| Full paper lifecycle | BLOCKED | Candidate protection/partial recovery tested; resting maker, funding/journal integration and deployed lifecycle remain incomplete |
 | Spot/futures economic accounting | PARTIALLY VERIFIED | Replay and fixtures agree; complete independent custody model not certified |
-| Fees/slippage/margin/liquidation | PARTIALLY VERIFIED | Existing tests; fee-tier and liquidation gaps |
+| Fees/slippage/margin/liquidation | PARTIALLY VERIFIED | Taker classification and actual-cost checks repaired; true maker/venue-tier/dust gaps remain |
 | Exchange reconciliation | PARTIALLY VERIFIED | Native read-only connectivity; complete retained history/transfer coverage incomplete |
 | 500 USDT account | PARTIALLY VERIFIED | VPS campaign verified; Candidate Android uses authoritative VPS projection; deployment/device verification pending |
 | Multi-day stability | BLOCKED | Only hours elapsed; degraded sample and observation gaps |
@@ -35,3 +35,5 @@ Browser result: seven view-navigation checks, five chart-control clicks, and pan
 Current native-integration checkpoint supersedes earlier Android integration gaps: see NATIVE_INTEGRATION_REPORT.md. Candidate Android now uses server portfolio data and has secure server-issued sessions; these endpoints are not deployed. New debug APK: artifacts/violet-scarlet-pro-native-integration-debug.apk; 20 tests passed; SHA-256 680d4a44047d7f74729b2b6c493febf48bcf057aa90534e6b4a621e2e43fb0df. Overall verdict remains BLOCKED.
 
 Latest validation checkpoint: full backend suite 225 passed (63.34 seconds), Android 20 passed, frontend 42 passed plus typecheck/build. New candidate endpoints and native portfolio remain undeployed; overall verdict remains BLOCKED.
+
+Protection checkpoint supersedes earlier missing-feature statements: candidate multi-level exits, trailing stops and a documented liquidation model are implemented and tested. Full suite 250 passed; Android 21 passed; frontend 42 passed plus typecheck/build. See PAPER_PROTECTION_IMPLEMENTATION_REPORT.md for scope and remaining blockers. No candidate deployment or multi-day stability pass is claimed.

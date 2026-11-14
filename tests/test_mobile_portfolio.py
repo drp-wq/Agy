@@ -31,7 +31,9 @@ def test_native_projection_matches_authoritative_fill_and_equity_without_mutatio
         assert Decimal(result['cash_usdt']) == cash
         assert Decimal(result['available_cash_usdt']) == cash - reserved
         assert Decimal(result['reserved_margin_usdt']) == reserved
-        assert Decimal(result['equity_usdt']) == cash
+        entry_slippage = Decimal(str(round((snap.last_price-order.avg_fill_price)*order.filled_qty,4)))
+        assert Decimal(result['equity_usdt']) == cash + entry_slippage
+        assert cash == Decimal('500') - Decimal(str(order.fee_usd))
         assert Decimal(result['fees_usdt']) == Decimal(str(order.fee_usd))
         assert result['campaign_id'] == 'fixture-500' and result['source'] == 'authoritative_vps_campaign'
         assert len(result['positions']) == 1 and len(result['orders']) == 1

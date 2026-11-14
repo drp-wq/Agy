@@ -30,3 +30,5 @@ A second native-integration candidate has been validated locally (see NATIVE_INT
 Validated native source commit: 2d0872133aa10940e73aa2b20a189bda5876c828. Original input/config hashes are retained in evidence/android-input-config-hashes.json; no release signing key or production credential is part of this source commit.
 
 Native integration backend source commit: 7595055e2d3e59dd2c457a2e100c87fdfdd6a231. Native Android source commit: 2d0872133aa10940e73aa2b20a189bda5876c828. Both are local candidate commits, not deployed commits. Production base remains 0f2a0d2dd752eafdd59bbeb8d93f0c440bf9245a with local changes; exact loaded deployment provenance remains unverified. All paper services and Caddy retained their recorded PIDs and NRestarts=0 at the final checkpoint.
+
+Protection candidate validated locally: 250 backend tests and 21 Android tests. Latest APK artifacts/violet-scarlet-pro-protection-debug.apk, SHA-256 99b9bbe54365a0994b70115bbd8cd0ef00e6e78e624a1acd51a1e18f7a8c393c. No production deployment or restart; candidate source commits recorded after review. See PAPER_PROTECTION_IMPLEMENTATION_REPORT.md and rollback limitations.

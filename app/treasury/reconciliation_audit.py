@@ -10,13 +10,13 @@ def detect_missing_paper_order_evidence(db) -> dict[str, Any]:
     with db._lock:
         c = db._conn
         filled_orders = c.execute(
-            "SELECT COUNT(*) FROM paper_orders WHERE status = 'filled' AND is_paper = 1"
+            "SELECT COUNT(*) FROM paper_orders WHERE filled_qty > 0 AND is_paper = 1"
         ).fetchone()[0]
         missing_fill_rows = c.execute(
             """
             SELECT o.order_id
             FROM paper_orders o
-            WHERE o.status = 'filled'
+            WHERE o.filled_qty > 0
               AND o.is_paper = 1
               AND NOT EXISTS (
                   SELECT 1 FROM paper_fills f WHERE f.order_id = o.order_id
@@ -28,7 +28,7 @@ def detect_missing_paper_order_evidence(db) -> dict[str, Any]:
             """
             SELECT o.order_id
             FROM paper_orders o
-            WHERE o.status = 'filled'
+            WHERE o.filled_qty > 0
               AND o.is_paper = 1
               AND o.signal_id = 'sl_tp_exit'
               AND NOT EXISTS (
@@ -46,6 +46,7 @@ def detect_missing_paper_order_evidence(db) -> dict[str, Any]:
         "missing_fill_order_ids": missing_fill_ids,
         "missing_sltp_closures_count": len(missing_sltp_closure_ids),
         "missing_sltp_closure_order_ids": missing_sltp_closure_ids,
+        "order_scope": "executed quantity, including partial/canceled orders",
         "complete": len(missing_fill_ids) == 0 and len(missing_sltp_closure_ids) == 0,
     }
 
@@ -96,7 +97,7 @@ def audit_per_bot_paper_pnl(db) -> list[dict[str, Any]]:
                 """
                 SELECT o.bot_id, COUNT(*)
                 FROM paper_orders o
-                WHERE o.status = 'filled' AND o.is_paper = 1
+                WHERE o.filled_qty > 0 AND o.is_paper = 1
                   AND NOT EXISTS (SELECT 1 FROM paper_fills f WHERE f.order_id = o.order_id)
                 GROUP BY o.bot_id
                 """
@@ -108,7 +109,7 @@ def audit_per_bot_paper_pnl(db) -> list[dict[str, Any]]:
                 """
                 SELECT o.bot_id, COUNT(*)
                 FROM paper_orders o
-                WHERE o.status = 'filled' AND o.is_paper = 1 AND o.signal_id = 'sl_tp_exit'
+                WHERE o.filled_qty > 0 AND o.is_paper = 1 AND o.signal_id = 'sl_tp_exit'
                   AND NOT EXISTS (SELECT 1 FROM paper_realized_closures cl WHERE cl.order_id = o.order_id)
                 GROUP BY o.bot_id
                 """

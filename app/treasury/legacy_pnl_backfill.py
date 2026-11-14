@@ -89,7 +89,7 @@ def replay_paper_orders(
                    (SELECT COUNT(*) FROM paper_fills f WHERE f.order_id = o.order_id) AS fill_cnt,
                    (SELECT COUNT(*) FROM paper_realized_closures c WHERE c.order_id = o.order_id) AS closure_cnt
             FROM paper_orders o
-            WHERE o.status = 'filled' AND o.is_paper = 1
+            WHERE o.filled_qty > 0 AND o.is_paper = 1
             ORDER BY o.created_at ASC, o.order_id ASC
             """
         ).fetchall()
@@ -207,6 +207,17 @@ def replay_paper_orders(
             else:
                 pos["qty"] = remaining
 
+    # Funding affects realized cash independently of order/position replay.
+    if conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='paper_funding_settlements'").fetchone():
+        for event in conn.execute('SELECT bot_id,signed_usd FROM paper_funding_settlements WHERE is_paper=1'):
+            if event['bot_id'] not in accounts:
+                raise LegacyReplayMismatchError('Funding event has no paper account')
+            amount = Decimal(event['signed_usd'])
+            if not amount.is_finite():
+                raise LegacyReplayMismatchError('Non-finite funding event')
+            replayed_cash[event['bot_id']] += float(amount)
+            replayed_realized[event['bot_id']] += float(amount)
+
     replayed_margin: dict[str, float] = {b: 0.0 for b in accounts}
     for (bot_id, _, _, _), p in positions.items():
         replayed_margin[bot_id] += (p["qty"] * p["entry_price"]) / max(p["leverage"], 1.0)
@@ -274,7 +285,7 @@ def _snapshot_invariants(conn: sqlite3.Connection) -> dict[str, Any]:
     ]
     orders_total = conn.execute("SELECT COUNT(*) FROM paper_orders").fetchone()[0]
     orders_filled = conn.execute(
-        "SELECT COUNT(*) FROM paper_orders WHERE status = 'filled' AND is_paper = 1"
+        "SELECT COUNT(*) FROM paper_orders WHERE filled_qty > 0 AND is_paper = 1"
     ).fetchone()[0]
     journal_entries = conn.execute("SELECT COUNT(*) FROM treasury_journal_entries").fetchone()[0]
     journal_lines = conn.execute("SELECT COUNT(*) FROM treasury_journal_lines").fetchone()[0]

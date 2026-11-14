@@ -322,8 +322,12 @@ class MidLowCapStrategySelector:
                     )
                     continue
 
-                # Reorder take_profit_targets so chosen_tp is primary TP1
-                reordered_tps = [chosen_tp] + [t for t in sig.take_profit_targets if t != chosen_tp]
+                # Levels closer than the approved primary target do not satisfy
+                # the selected minimum R:R. Never reintroduce them after TP1.
+                reordered_tps = sorted({chosen_tp, *(
+                    t for t in sig.take_profit_targets
+                    if (t > chosen_tp if sig.direction == Direction.LONG else t < chosen_tp)
+                )}, reverse=sig.direction == Direction.SHORT)
                 base = snap.symbol.split("/")[0].upper()
                 cap_rec = cap_records.get(base)
                 sig.take_profit_targets = reordered_tps
