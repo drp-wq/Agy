@@ -1,0 +1,43 @@
+--- a/preview_integration/preview_app.py
++++ b/preview_integration/preview_app.py
+@@ -20,0 +21,28 @@
++# Router custody is isolated from both preview execution and the Violet campaign.
++from app.treasury.closed_loop_router import ClosedLoopAssetRouter
++from app.intelligence.unified_brain import UnifiedTradingBrain
++from app.intelligence.service_metrics import collect_service_metrics
++from app.core.security import LIVE_EXECUTION_PERMANENTLY_DISABLED
++
++assert LIVE_EXECUTION_PERMANENTLY_DISABLED is True
++router = ClosedLoopAssetRouter(state_path=root / 'closed-loop-paper' / 'router.sqlite3',
++                               risk_guardian=service.risk)
++brain = UnifiedTradingBrain(router, risk_guardian=service.risk)
++
++async def brain_loop():
++    from datetime import datetime, timezone
++    while True:
++        try:
++            # Minute IDs survive restarts; report replay prevents repeated movement.
++            cycle_id = datetime.now(timezone.utc).strftime('preview:%Y%m%d%H%M')
++            with router.transaction():
++                try:
++                    metrics = collect_service_metrics(service, router)
++                    reason = None if metrics else 'service_metrics_insufficient_history_or_valuation'
++                except Exception as exc:
++                    metrics, reason = [], f'service_metrics_unavailable:{type(exc).__name__}:{exc}'
++                brain.step(metrics, cycle_id, unavailable_reason=reason)
++        except Exception:
++            logging.getLogger(__name__).exception('Paper brain cycle failed closed')
++        await asyncio.sleep(60)
++
+@@ -25 +53,2 @@
+-install_violet_status(app, all_cap, auth_config)
++app.state.unified_brain = brain
++install_violet_status(app, all_cap, auth_config, closed_loop_router=router, risk_guardian=service.risk)
+@@ -48,0 +78 @@
++    brain_task = asyncio.create_task(brain_loop())
+@@ -53,0 +84,5 @@
++        brain_task.cancel()
++        try:
++            await brain_task
++        except asyncio.CancelledError:
++            pass

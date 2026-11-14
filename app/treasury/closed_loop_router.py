@@ -4,6 +4,10 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
+import copy
+from contextlib import contextmanager
+from functools import wraps
 from datetime import datetime, timezone
 from decimal import Decimal
 from enum import Enum
@@ -95,6 +99,14 @@ class ClosedLoopTransferRecord(BaseModel):
     settled_at_utc: str | None = None
 
 
+def atomic_router(method):
+    @wraps(method)
+    def wrapped(self, *args, **kwargs):
+        with self.transaction():
+            return method(self, *args, **kwargs)
+    return wrapped
+
+
 class ClosedLoopAssetRouter:
     """Deterministic closed-loop router enforcing allowlists, fee caps, concentration caps, and equity conservation."""
 
@@ -108,6 +120,8 @@ class ClosedLoopAssetRouter:
         default_fee_bps: Decimal = Decimal("4"),
         state_path: Path | str | None = None,
     ) -> None:
+        self._lock = threading.RLock()
+        self._connection = None
         self.risk_guardian = risk_guardian
         self.allowlist: dict[ClosedLoopVenue, str] = dict(allowlist or DEFAULT_ALLOWLIST_ADDRESSES)
         self.max_transfer_fee_pct = to_decimal(max_transfer_fee_pct, Decimal("0.0001"))
@@ -134,12 +148,16 @@ class ClosedLoopAssetRouter:
         self._by_idempotency: dict[str, ClosedLoopTransferRecord] = {}
         if self.state_path is not None:
             self._init_db()
-            self._load_state()
+            with self.transaction():
+                self._save_state()
 
     def _init_db(self) -> None:
         if self.state_path is None:
             return
         self.state_path.parent.mkdir(parents=True, exist_ok=True)
+        from app.persistence.database import PaperDatabase
+        database = PaperDatabase(self.state_path)
+        database.close()
         with sqlite3.connect(self.state_path) as conn:
             conn.execute(
                 """
@@ -154,8 +172,7 @@ class ClosedLoopAssetRouter:
     def _load_state(self) -> None:
         if self.state_path is None or not self.state_path.exists():
             return
-        with sqlite3.connect(self.state_path) as conn:
-            row = conn.execute("SELECT payload_json FROM closed_loop_state WHERE id = 1").fetchone()
+        row = self._connection.execute("SELECT payload_json FROM closed_loop_state WHERE id = 1").fetchone()
         if not row:
             return
         data = json.loads(row[0])
@@ -176,9 +193,11 @@ class ClosedLoopAssetRouter:
             "in_flight_usd": str(self._in_flight_usd),
             "cumulative_fees_usd": str(self._cumulative_fees_usd),
             "initial_equity_usd": str(self._initial_equity_usd),
-            "records": [r.model_dump(mode="json") for r in self._records[:200]],
+            "records": [r.model_dump(mode="json") for r in self._records],
         }
-        with sqlite3.connect(self.state_path) as conn:
+        with self._connection_context() as conn:
+            self._write_journal(conn)
+            self.reconcile()
             conn.execute(
                 """
                 INSERT INTO closed_loop_state (id, payload_json, updated_at_utc)
@@ -189,6 +208,82 @@ class ClosedLoopAssetRouter:
                 """,
                 (json.dumps(payload), datetime.now(timezone.utc).isoformat()),
             )
+
+    @contextmanager
+    def _connection_context(self):
+        if self._connection is None:
+            raise TreasuryInvariantError("Router writes require an atomic transaction")
+        yield self._connection
+
+    @contextmanager
+    def transaction(self):
+        """Serialize writers, refresh state, and commit journal, balances and cycles together."""
+        with self._lock:
+            if self._connection is not None or self.state_path is None:
+                snapshot = copy.deepcopy((self._balances, self._cumulative_fees_usd,
+                                          self._records, self._by_idempotency))
+                conn = self._connection
+                savepoint = f"router_{uuid4().hex}"
+                if conn is not None:
+                    conn.execute(f"SAVEPOINT {savepoint}")
+                try:
+                    yield
+                    if conn is not None:
+                        conn.execute(f"RELEASE SAVEPOINT {savepoint}")
+                except BaseException:
+                    if conn is not None:
+                        conn.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
+                        conn.execute(f"RELEASE SAVEPOINT {savepoint}")
+                    (self._balances, self._cumulative_fees_usd,
+                     self._records, self._by_idempotency) = snapshot
+                    raise
+                return
+            conn = sqlite3.connect(self.state_path)
+            self._connection = conn
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                self._load_state()
+                self.check_equity_invariant()
+                self.reconcile()
+                yield
+                conn.commit()
+            except BaseException:
+                conn.rollback()
+                self._load_state()
+                raise
+            finally:
+                self._connection = None
+                conn.close()
+
+    def _write_journal(self, conn):
+        from app.treasury.ledger import post_closed_loop_journal
+        post_closed_loop_journal(conn, self)
+
+    def reconcile(self):
+        """Compare every router USD account against the shared double-entry journal."""
+        if self._connection is None:
+            if self.state_path is None:
+                return {"balanced": True}
+            with self.transaction():
+                return self.reconcile()
+        rows = self._connection.execute(
+            "SELECT account_code, debit, credit FROM treasury_journal_lines "
+            "WHERE account_code LIKE 'closed_loop:%'"
+        ).fetchall()
+        if not rows:
+            if self._records:
+                # Legacy snapshots must be migrated explicitly; never invent historical evidence.
+                raise TreasuryInvariantError("Legacy router history has no double-entry journal")
+            return {"balanced": True}
+        totals = {}
+        for account, debit, credit in rows:
+            totals[account] = totals.get(account, Decimal(0)) + Decimal(debit) - Decimal(credit)
+        expected = {f"closed_loop:{v.value}": b for v, b in self._balances.items()}
+        expected["closed_loop:fees"] = self._cumulative_fees_usd
+        expected["closed_loop:equity"] = -self._initial_equity_usd
+        if any(totals.get(k, Decimal(0)) != v for k, v in expected.items()) or set(totals) - set(expected):
+            raise TreasuryInvariantError("Router balances do not reconcile to double-entry journal")
+        return {"balanced": True}
 
     def _sum_venue_balances(self) -> Decimal:
         total = Decimal("0.00")
@@ -219,6 +314,7 @@ class ClosedLoopAssetRouter:
             "drift_usd": str(drift),
         }
 
+    @atomic_router
     def simulate_transfer(
         self,
         source_venue: ClosedLoopVenue | str,
@@ -324,6 +420,7 @@ class ClosedLoopAssetRouter:
         self._save_state()
         return record
 
+    @atomic_router
     def auto_sweep_idle_capital(
         self,
         venue: ClosedLoopVenue | str,

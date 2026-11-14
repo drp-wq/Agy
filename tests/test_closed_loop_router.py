@@ -158,3 +158,34 @@ def test_closed_loop_sqlite_persistence_survives_restart(tmp_path):
     assert s2["transfer_count"] == 1
     assert s2["transfers"][0]["transfer_id"] == rec.transfer_id
     assert s2["invariant"]["conservation_ok"] is True
+
+
+def test_router_reconciles_and_rejects_snapshot_drift(tmp_path):
+    import json
+    import sqlite3
+    import pytest
+    from app.treasury.models import TreasuryInvariantError
+    path = tmp_path / 'router.sqlite3'
+    router = ClosedLoopAssetRouter(state_path=path)
+    router.simulate_transfer('hub_binance_master', 'cex_binance', '100', 'journal')
+    assert router.reconcile()['balanced']
+    with sqlite3.connect(path) as conn:
+        data = json.loads(conn.execute('SELECT payload_json FROM closed_loop_state').fetchone()[0])
+        data['balances']['cex_binance'] = str(Decimal(data['balances']['cex_binance']) + 1)
+        data['balances']['hub_binance_master'] = str(Decimal(data['balances']['hub_binance_master']) - 1)
+        conn.execute('UPDATE closed_loop_state SET payload_json = ?', (json.dumps(data),))
+    with pytest.raises(TreasuryInvariantError, match='reconcile'):
+        ClosedLoopAssetRouter(state_path=path)
+
+
+def test_router_idempotency_survives_more_than_200_records_and_two_writers(tmp_path):
+    path = tmp_path / 'router.sqlite3'
+    first = ClosedLoopAssetRouter(state_path=path, default_fee_bps=Decimal('0'))
+    second = ClosedLoopAssetRouter(state_path=path)
+    original = first.simulate_transfer('hub_binance_master', 'cex_binance', '1', 'oldest')
+    for i in range(201):
+        second.simulate_transfer('cex_binance', 'hub_binance_master', '1', f'back-{i}')
+    restarted = ClosedLoopAssetRouter(state_path=path)
+    assert restarted.simulate_transfer('hub_binance_master', 'cex_binance', '1', 'oldest') == original
+    assert restarted.summary()['transfer_count'] == 202
+    assert restarted.reconcile()['balanced']

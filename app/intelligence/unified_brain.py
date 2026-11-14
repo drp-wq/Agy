@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from decimal import Decimal
+import json
+
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -54,8 +56,54 @@ class UnifiedTradingBrain:
         self.min_step_usd = to_decimal(min_step_usd, QUANT_2)
         self.max_step_usd = to_decimal(max_step_usd, QUANT_2)
         self.last_report: UnifiedBrainCycleReport | None = None
+        with self.router.transaction():
+            if self.router._connection is not None:
+                conn = self.router._connection
+                conn.execute("CREATE TABLE IF NOT EXISTS unified_brain_cycles "
+                             "(cycle_id TEXT PRIMARY KEY, metrics_json TEXT NOT NULL, report_json TEXT NOT NULL)")
+                row = conn.execute("SELECT report_json FROM unified_brain_cycles ORDER BY rowid DESC LIMIT 1").fetchone()
+                if row:
+                    self.last_report = UnifiedBrainCycleReport.model_validate_json(row[0])
 
-    def step(
+    def step(self, metrics: list[VenueBotMetrics], cycle_id: str,
+             unavailable_reason: str | None = None) -> UnifiedBrainCycleReport:
+        if not cycle_id:
+            raise ValueError("cycle_id is required")
+        fingerprint = json.dumps([m.model_dump(mode="json") for m in metrics], sort_keys=True) + str(unavailable_reason)
+        previous = self.last_report
+        try:
+            with self.router.transaction():
+                conn = self.router._connection
+                if conn is not None:
+                    row = conn.execute("SELECT metrics_json, report_json FROM unified_brain_cycles WHERE cycle_id = ?",
+                                       (cycle_id,)).fetchone()
+                    if row:
+                        if row[0] != fingerprint:
+                            from app.treasury.models import DuplicateIdempotencyError
+                            raise DuplicateIdempotencyError("Cycle ID reused with different metrics")
+                        self.last_report = UnifiedBrainCycleReport.model_validate_json(row[1])
+                        return self.last_report
+                if self.risk_guardian is not None and (
+                    self.risk_guardian.emergency_stop_active or self.risk_guardian.circuit_breaker_tripped
+                ):
+                    report = self._step(metrics, cycle_id)
+                    if unavailable_reason:
+                        report.skipped_reasons.append(unavailable_reason)
+                elif unavailable_reason or not metrics:
+                    report = UnifiedBrainCycleReport(skipped_reasons=[unavailable_reason or "metrics_unavailable"],
+                                                     invariant=self.router.check_equity_invariant())
+                else:
+                    report = self._step(metrics, cycle_id)
+                if conn is not None:
+                    conn.execute("INSERT INTO unified_brain_cycles VALUES (?, ?, ?)",
+                                 (cycle_id, fingerprint, report.model_dump_json()))
+                self.last_report = report
+                return report
+        except BaseException:
+            self.last_report = previous
+            raise
+
+    def _step(
         self,
         metrics: list[VenueBotMetrics],
         cycle_id: str,
@@ -92,6 +140,8 @@ class UnifiedTradingBrain:
                     executed.append(swept)
             except Exception as exc:
                 skipped.append(f"{item.venue.value}:sweep_skipped:{exc}")
+
+        balances = {ClosedLoopVenue(k): to_decimal(v, QUANT_2) for k, v in self.router.summary()["balances_usd"].items()}
 
         # 2. Allocate from Hub to top-scoring active venues below target
         scored = sorted(

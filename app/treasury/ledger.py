@@ -1307,3 +1307,43 @@ class UnifiedTreasuryLedger:
             "attribution_by_exchange": self.get_attribution_summary("exchange"),
             "attribution_by_strategy": self.get_attribution_summary("strategy"),
         }
+
+
+def post_closed_loop_journal(conn: Any, router: Any) -> None:
+    """Journal router USD custody in its own paper namespace, in the caller's transaction.
+
+    These accounts never debit the strategy master pool or a campaign ledger.
+    """
+    def post(key: str, lines: list[tuple[str, Decimal]], event: str) -> None:
+        existing = conn.execute(
+            "SELECT 1 FROM treasury_journal_entries WHERE idempotency_key = ?", (key,)
+        ).fetchone()
+        if existing:
+            return
+        if sum((amount for _, amount in lines), Decimal(0)) != 0:
+            raise TreasuryInvariantError("Unbalanced closed-loop journal entry")
+        now = utc_now().isoformat()
+        entry_id = f"jrn_{uuid4().hex}"
+        conn.execute(
+            "INSERT INTO treasury_journal_entries VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?)",
+            (entry_id, key, event, key, LedgerScope.PAPER_SIMULATED.value, "1", now,
+             json.dumps({"namespace": "closed_loop", "valuation": "USD"}), now),
+        )
+        for account, amount in lines:
+            conn.execute(
+                "INSERT INTO treasury_journal_lines "
+                "(entry_id, account_code, asset, debit, credit, usd_value) VALUES (?, ?, 'USD', ?, ?, ?)",
+                (entry_id, f"closed_loop:{account}", str(max(amount, Decimal(0))),
+                 str(max(-amount, Decimal(0))), str(abs(amount))),
+            )
+
+    # Seed only before the first transfer. Existing snapshots with history fail closed.
+    if not router._records:
+        post("closed_loop:seed", [(v.value, b) for v, b in router._balances.items()] +
+             [("equity", -router._initial_equity_usd)], "CLOSED_LOOP_PAPER_SEED")
+    for record in reversed(router._records):
+        post(f"closed_loop:transfer:{record.idempotency_key}", [
+            (record.source_venue.value, -record.amount_usd),
+            (record.destination_venue.value, record.net_amount_usd),
+            ("fees", record.fee_usd),
+        ], "CLOSED_LOOP_PAPER_TRANSFER")
