@@ -138,3 +138,23 @@ def test_auto_sweep_idle_capital_with_hysteresis():
     assert swept.destination_venue == ClosedLoopVenue.HUB_BINANCE_MASTER
     assert swept.amount_usd == Decimal("1000.00")
     assert router.check_equity_invariant()["conservation_ok"] is True
+
+
+def test_closed_loop_sqlite_persistence_survives_restart(tmp_path):
+    db_file = tmp_path / "closed_loop.sqlite3"
+    r1 = ClosedLoopAssetRouter(state_path=db_file)
+    rec = r1.simulate_transfer(
+        source_venue=ClosedLoopVenue.HUB_BINANCE_MASTER,
+        destination_venue=ClosedLoopVenue.CEX_BINANCE,
+        amount_usd="500.00",
+        idempotency_key="persist-1",
+    )
+
+    # Reload from SQLite
+    r2 = ClosedLoopAssetRouter(state_path=db_file)
+    s2 = r2.summary()
+    assert s2["balances_usd"]["hub_binance_master"] == "11500.00"
+    assert s2["balances_usd"]["cex_binance"] == "4500.00"
+    assert s2["transfer_count"] == 1
+    assert s2["transfers"][0]["transfer_id"] == rec.transfer_id
+    assert s2["invariant"]["conservation_ok"] is True

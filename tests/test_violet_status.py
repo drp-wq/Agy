@@ -58,3 +58,10 @@ def test_unified_account_and_simulated_closed_loop_transfer_endpoints():
             },
         )
         assert bad.status_code == 400
+
+        brain = client.get('/api/violet/brain/status', auth=('fixture', 'fixture-password'))
+        assert brain.status_code == 200
+        brain_body = brain.json()
+        assert brain_body['agents'] == ['AGY', 'Codex']
+        assert brain_body['live_execution_enabled'] is False
+        assert brain_body['invariant']['conservation_ok'] is True

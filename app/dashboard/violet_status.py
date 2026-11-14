@@ -7,6 +7,7 @@ from starlette.concurrency import run_in_threadpool
 
 from app.dashboard.auth import make_auth_dependency
 from app.dashboard.violet_solana_bridge import solana_summary
+from app.intelligence.unified_brain import UnifiedTradingBrain
 from app.treasury.closed_loop_router import (
     ClosedLoopAssetRouter,
     ClosedLoopRiskBlockedError,
@@ -23,9 +24,24 @@ class SimulateTransferRequest(BaseModel):
     requested_by: str = Field(default="unified_ai_brain", max_length=64)
 
 
-def install_violet_status(app, runner, auth_config, closed_loop_router: ClosedLoopAssetRouter | None = None):
+def install_violet_status(
+    app,
+    runner,
+    auth_config,
+    closed_loop_router: ClosedLoopAssetRouter | None = None,
+    risk_guardian=None,
+    state_path=None,
+):
     if getattr(app.state, "closed_loop_router", None) is None:
-        app.state.closed_loop_router = closed_loop_router or ClosedLoopAssetRouter()
+        app.state.closed_loop_router = closed_loop_router or ClosedLoopAssetRouter(
+            risk_guardian=risk_guardian,
+            state_path=state_path,
+        )
+    if getattr(app.state, "unified_brain", None) is None:
+        app.state.unified_brain = UnifiedTradingBrain(
+            router=app.state.closed_loop_router,
+            risk_guardian=risk_guardian or app.state.closed_loop_router.risk_guardian,
+        )
 
     auth_dep = Depends(make_auth_dependency(auth_config))
 
@@ -57,6 +73,20 @@ def install_violet_status(app, runner, auth_config, closed_loop_router: ClosedLo
             'paper_only': True,
         }
         return summary
+
+    @app.get('/api/violet/brain/status', dependencies=[auth_dep])
+    async def unified_brain_status():
+        brain: UnifiedTradingBrain = app.state.unified_brain
+        summary = brain.router.summary()
+        return {
+            'mode': 'PAPER_SIMULATION_ONLY',
+            'live_execution_enabled': False,
+            'agents': ['AGY', 'Codex'],
+            'shared_skill': 'unified-treasury-router',
+            'risk_gate': summary['risk_gate'],
+            'invariant': summary['invariant'],
+            'last_report': brain.last_report.model_dump(mode='json') if brain.last_report else None,
+        }
 
     @app.get('/api/violet/transfers', dependencies=[auth_dep])
     async def closed_loop_transfers():

@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import json
+import sqlite3
 from datetime import datetime, timezone
 from decimal import Decimal
 from enum import Enum
+from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
@@ -103,12 +106,14 @@ class ClosedLoopAssetRouter:
         max_transfer_fee_pct: Decimal = Decimal("0.0025"),
         max_venue_concentration_pct: Decimal = Decimal("0.35"),
         default_fee_bps: Decimal = Decimal("4"),
+        state_path: Path | str | None = None,
     ) -> None:
         self.risk_guardian = risk_guardian
         self.allowlist: dict[ClosedLoopVenue, str] = dict(allowlist or DEFAULT_ALLOWLIST_ADDRESSES)
         self.max_transfer_fee_pct = to_decimal(max_transfer_fee_pct, Decimal("0.0001"))
         self.max_venue_concentration_pct = to_decimal(max_venue_concentration_pct, Decimal("0.0001"))
         self.default_fee_bps = default_fee_bps
+        self.state_path: Path | None = Path(state_path) if state_path is not None else None
 
         defaults: dict[ClosedLoopVenue, Decimal] = {
             ClosedLoopVenue.HUB_BINANCE_MASTER: Decimal("12000.00"),
@@ -127,6 +132,63 @@ class ClosedLoopAssetRouter:
         self._initial_equity_usd: Decimal = self._sum_venue_balances()
         self._records: list[ClosedLoopTransferRecord] = []
         self._by_idempotency: dict[str, ClosedLoopTransferRecord] = {}
+        if self.state_path is not None:
+            self._init_db()
+            self._load_state()
+
+    def _init_db(self) -> None:
+        if self.state_path is None:
+            return
+        self.state_path.parent.mkdir(parents=True, exist_ok=True)
+        with sqlite3.connect(self.state_path) as conn:
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS closed_loop_state (
+                    id INTEGER PRIMARY KEY CHECK (id = 1),
+                    payload_json TEXT NOT NULL,
+                    updated_at_utc TEXT NOT NULL
+                )
+                """
+            )
+
+    def _load_state(self) -> None:
+        if self.state_path is None or not self.state_path.exists():
+            return
+        with sqlite3.connect(self.state_path) as conn:
+            row = conn.execute("SELECT payload_json FROM closed_loop_state WHERE id = 1").fetchone()
+        if not row:
+            return
+        data = json.loads(row[0])
+        self._balances = {
+            ClosedLoopVenue(k): to_decimal(v, QUANT_2) for k, v in data["balances"].items()
+        }
+        self._in_flight_usd = to_decimal(data.get("in_flight_usd", "0.00"), QUANT_2)
+        self._cumulative_fees_usd = to_decimal(data.get("cumulative_fees_usd", "0.00"), QUANT_2)
+        self._initial_equity_usd = to_decimal(data["initial_equity_usd"], QUANT_2)
+        self._records = [ClosedLoopTransferRecord.model_validate(r) for r in data.get("records", [])]
+        self._by_idempotency = {r.idempotency_key: r for r in self._records}
+
+    def _save_state(self) -> None:
+        if self.state_path is None:
+            return
+        payload = {
+            "balances": {v.value: str(b) for v, b in self._balances.items()},
+            "in_flight_usd": str(self._in_flight_usd),
+            "cumulative_fees_usd": str(self._cumulative_fees_usd),
+            "initial_equity_usd": str(self._initial_equity_usd),
+            "records": [r.model_dump(mode="json") for r in self._records[:200]],
+        }
+        with sqlite3.connect(self.state_path) as conn:
+            conn.execute(
+                """
+                INSERT INTO closed_loop_state (id, payload_json, updated_at_utc)
+                VALUES (1, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    payload_json = excluded.payload_json,
+                    updated_at_utc = excluded.updated_at_utc
+                """,
+                (json.dumps(payload), datetime.now(timezone.utc).isoformat()),
+            )
 
     def _sum_venue_balances(self) -> Decimal:
         total = Decimal("0.00")
@@ -259,6 +321,7 @@ class ClosedLoopAssetRouter:
         self._records.insert(0, record)
         self._by_idempotency[idempotency_key] = record
         self.check_equity_invariant()
+        self._save_state()
         return record
 
     def auto_sweep_idle_capital(

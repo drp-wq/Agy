@@ -115,6 +115,29 @@ export const TreasuryAuditView: React.FC<Props> = ({ state, initData }) => {
           title="Unified Treasury Disabled"
           description="The 18-agent unified treasury feature flag is currently disabled on the backend engine."
         />
+        {unifiedAccount && (
+          <div className="nq-panel rounded-xl p-4 sm:p-5 space-y-3 border border-[#ff3555]/25">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+                <ArrowRightLeft className="w-4 h-4 text-[#ff3555]" />
+                <span>Unified Trading Account &amp; Closed-Loop Router</span>
+              </h3>
+              <span className="px-2 py-1 rounded bg-[#10B981]/15 border border-[#10B981]/30 text-[#10B981] text-[10px] font-mono">
+                {unifiedAccount.invariant.conservation_ok ? 'CONSERVATION OK' : 'PAPER SIMULATION ONLY'}
+              </span>
+            </div>
+            <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+              {Object.entries(unifiedAccount.balances_usd).map(([venue, bal]) => (
+                <div key={venue} className="bg-[#080305] border border-white/[0.08] rounded-xl p-3 space-y-1">
+                  <div className="text-[10px] font-mono uppercase tracking-wider text-slate-400">
+                    {venue.replace(/_/g, ' ')}
+                  </div>
+                  <div className="text-sm font-mono font-bold text-white">${fmtDec(bal)}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     );
   }
