@@ -177,8 +177,8 @@ describe('VioletCampaignPanel', () => {
     expect(html).toContain('mid');
     expect(html).toContain('large');
     expect(html).toContain('mega');
-    expect(html).toContain('Historical Archive (Read-Only, Excluded)');
-    expect(html).toContain('5,000.00 USDT');
+    expect(html).not.toContain('Historical Archive (Read-Only, Excluded)');
+    expect(html).not.toContain('5,000.00 USDT');
     expect(html).toContain('ENTRY GATE: OPEN');
   });
 

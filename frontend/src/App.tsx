@@ -39,6 +39,7 @@ import {
   StaleWarningStrip
 } from './components/common/TerminalPrimitives';
 
+const ActiveCampaignTradesView = lazy(() => import('./components/workspaces/ActiveCampaignTradesView').then(m => ({ default: m.ActiveCampaignTradesView })));
 const GlobalOverviewView = lazy(() =>
   import('./components/workspaces/GlobalOverviewView').then((m) => ({ default: m.GlobalOverviewView }))
 );
@@ -527,38 +528,11 @@ export default function App() {
                     onInspectChart={handleInspectOpportunityChart}
                   />
                 )}
-                {activeSection === 'binance' && (
-                  <ExchangeWorkspaceView
-                    exchange="binance"
-                    state={state}
-                    initData={telegram.initData}
-                    onInspectPosition={setInspectedPosition}
-                  />
+                {(['binance','bybit','okx'] as const).includes(activeSection as 'binance' | 'bybit' | 'okx') && (
+                  <ActiveCampaignTradesView kind="exchange" exchange={activeSection as 'binance' | 'bybit' | 'okx'} initData={telegram.initData} />
                 )}
-                {activeSection === 'bybit' && (
-                  <ExchangeWorkspaceView
-                    exchange="bybit"
-                    state={state}
-                    initData={telegram.initData}
-                    onInspectPosition={setInspectedPosition}
-                  />
-                )}
-                {activeSection === 'okx' && (
-                  <ExchangeWorkspaceView
-                    exchange="okx"
-                    state={state}
-                    initData={telegram.initData}
-                    onInspectPosition={setInspectedPosition}
-                  />
-                )}
-                {activeSection === 'positions' && (
-                  <PositionsTerminalView
-                    state={state}
-                    onInspectPosition={setInspectedPosition}
-                    initData={telegram.initData}
-                  />
-                )}
-                {activeSection === 'orders' && <PaperOrdersView state={state} initData={telegram.initData} />}
+                {activeSection === 'positions' && <ActiveCampaignTradesView kind="positions" initData={telegram.initData} />}
+                {activeSection === 'orders' && <ActiveCampaignTradesView kind="orders" initData={telegram.initData} />}
                 {activeSection === 'analytics' && <PortfolioAnalyticsView state={state} />}
                 {activeSection === 'risk' && <RiskCommandView state={state} health={health} />}
                 {activeSection === 'treasury' && <TreasuryAuditView state={state} initData={telegram.initData} />}

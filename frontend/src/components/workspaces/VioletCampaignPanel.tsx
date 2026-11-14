@@ -1,5 +1,5 @@
 import React from 'react';
-import { Activity, AlertTriangle, Archive, Ban, CheckCircle2, Clock, Lock, ShieldCheck } from 'lucide-react';
+import { Activity, AlertTriangle, Ban, CheckCircle2, Clock, Lock, ShieldCheck } from 'lucide-react';
 import { VioletResearchPayload, VioletSleeveBalance } from '../../services/violetResearchApi';
 
 interface VioletCampaignPanelProps {
@@ -25,7 +25,6 @@ export const VioletCampaignPanel: React.FC<VioletCampaignPanelProps> = ({ resear
   const budget = violet?.budget ?? null;
   const riskBudget = violet?.risk_budget ?? null;
   const gate = violet?.entry_gate ?? null;
-  const archive = violet?.historical_archive ?? null;
   const campaign = violet?.campaign ?? null;
   const campaignId = violet?.campaign_id || (campaign?.campaign_id as string | undefined) || null;
   const cycles = violet?.cycles ?? (campaign?.cycles_observed as number | undefined) ?? null;
@@ -308,21 +307,7 @@ export const VioletCampaignPanel: React.FC<VioletCampaignPanelProps> = ({ resear
             </div>
           )}
 
-          {/* Historical 5,000 USDT Archive vs Current 500 USDT Campaign Separation */}
-          <div className="rounded-xl bg-[#080305] border border-[#ff3555]/20 p-3 flex flex-wrap items-center justify-between gap-3 text-[11px] font-mono">
-            <div className="flex items-center gap-2 text-[#d4a5ac]">
-              <Archive className="w-4 h-4 text-[#ffb16c] shrink-0" />
-              <span>
-                <strong className="text-[#ffe3e5]">Historical Archive (Read-Only, Excluded):</strong>{' '}
-                {archive && archive.status === 'archived_read_only'
-                  ? `${archive.archive_dir} · Initial ${fmtUsdt(archive.initial_budget_usdt)} · Archived Realized P&L ${fmtSignedUsdt(archive.realized_pnl_usdt)} · ${archive.fills ?? 0} fills / ${archive.open_positions ?? 0} open`
-                  : archive?.status || 'Archived ledger isolated'}
-              </span>
-            </div>
-            <span className="text-[10px] text-[#a1737a]">
-              Separate from 500.00 USDT active campaign, Closed-Loop Router ($10k sim), and 18-Agent Treasury
-            </span>
-          </div>
+
         </>
       )}
     </section>
