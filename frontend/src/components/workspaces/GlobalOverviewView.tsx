@@ -1,3 +1,4 @@
+import { TradeSymbolLink } from '../charts/TradeSymbolLink';
 import React, { useEffect, useState } from 'react';
 import {
   ArrowLeftRight,
@@ -511,7 +512,7 @@ export const GlobalOverviewView: React.FC<GlobalOverviewViewProps> = ({
                     <span className={`font-semibold uppercase ${EXCHANGE_META[pos.exchange].accentText}`}>
                       {pos.exchange}
                     </span>
-                    <span className="text-white font-semibold">{pos.symbol}</span>
+                    <TradeSymbolLink exchange={pos.exchange} marketType="futures" symbol={pos.symbol} />
                     <span className={pos.side === 'LONG' ? 'text-[#10B981]' : 'text-[#EF4444]'}>
                       {pos.side} {pos.leverage}x
                     </span>
@@ -563,7 +564,7 @@ export const GlobalOverviewView: React.FC<GlobalOverviewViewProps> = ({
                     <span className={`font-semibold uppercase ${EXCHANGE_META[opp.exchange].accentText}`}>
                       {opp.exchange}
                     </span>
-                    <span className="text-[#ffe3e5] font-semibold">{opp.symbol}</span>
+                    <TradeSymbolLink exchange={opp.exchange} marketType={opp.market_type} symbol={opp.symbol} />
                     <span className="text-[#d4a5ac]">{opp.confirmed.regime.replace(/_/g, ' ')}</span>
                   </div>
                   <div className="text-[11px] font-mono text-[#d4a5ac] mt-0.5">

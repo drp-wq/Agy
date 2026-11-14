@@ -1,3 +1,4 @@
+import { TradeSymbolLink } from '../charts/TradeSymbolLink';
 import React, { useState } from 'react';
 import { CheckCircle2, XCircle, Eye, LineChart } from 'lucide-react';
 import { MarketOpportunity, MiniAppStateResponse } from '../../types/quant';
@@ -68,7 +69,7 @@ export const OpportunitiesView: React.FC<OpportunitiesViewProps> = ({ state, onI
                         <span className="text-slate-300 uppercase">{opp.market_type}</span>
                       </div>
                       <h3 className="text-lg font-mono font-bold text-white mt-0.5">
-                        {opp.symbol}{' '}
+                        <TradeSymbolLink exchange={opp.exchange} marketType={opp.market_type} symbol={opp.symbol} />{' '}
                         <span
                           className={`text-xs font-semibold ml-1 ${
                             estimates.direction === 'LONG'

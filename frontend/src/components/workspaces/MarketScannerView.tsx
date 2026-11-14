@@ -1,3 +1,4 @@
+import { TradeSymbolLink } from '../charts/TradeSymbolLink';
 import React, { useState } from 'react';
 import { Search, ArrowRightLeft } from 'lucide-react';
 import { ExchangeId, MarketOpportunity, MiniAppStateResponse } from '../../types/quant';
@@ -126,7 +127,7 @@ export const MarketScannerView: React.FC<MarketScannerViewProps> = ({
                           <td className="py-3 px-4">
                             <div className="flex items-center gap-2">
                               <span className={`font-semibold uppercase ${meta.accentText}`}>{item.exchange}</span>
-                              <span className="text-white font-semibold">{item.symbol}</span>
+                              <TradeSymbolLink exchange={item.exchange} marketType={item.market_type} symbol={item.symbol} />
                             </div>
                             <div className="text-[10px] text-slate-500 uppercase">{item.market_type}</div>
                           </td>
@@ -222,7 +223,7 @@ export const MarketScannerView: React.FC<MarketScannerViewProps> = ({
               <tbody className="divide-y divide-white/[0.06]">
                 {state.cross_exchange_spreads.map((row) => (
                   <tr key={row.symbol} className="hover:bg-white/[0.02]">
-                    <td className="py-3 px-4 font-semibold text-white">{row.symbol}</td>
+                    <td className="py-3 px-4 font-semibold text-white"><TradeSymbolLink exchange="binance" marketType="spot" symbol={row.symbol} /></td>
                     <td className="py-3 px-3 text-right text-slate-200">{formatPrice(row.binance_price)}</td>
                     <td className="py-3 px-3 text-right text-slate-200">{formatPrice(row.bybit_price)}</td>
                     <td className="py-3 px-3 text-right text-slate-200">{formatPrice(row.okx_price)}</td>

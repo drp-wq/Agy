@@ -1,3 +1,4 @@
+import { TradeSymbolLink } from '../charts/TradeSymbolLink';
 import React, { useState } from 'react';
 import { ShieldAlert, CheckCircle2 } from 'lucide-react';
 import {
@@ -122,7 +123,7 @@ export const ExchangeWorkspaceView: React.FC<ExchangeWorkspaceViewProps> = ({
             <div className="text-xs text-slate-400">Live derivative positions: {ex.live_readonly_snapshot.positions.length}</div>
             {ex.live_readonly_snapshot.positions.map((position, i) => (
               <div key={`${position.symbol}-${i}`} className="flex flex-wrap gap-4 text-xs font-mono text-slate-200 border-t border-white/[0.06] pt-2">
-                <span>{position.symbol}</span><span>{position.side}</span><span>Contracts: {position.contracts}</span>
+                <TradeSymbolLink exchange={exchange} marketType="futures" symbol={position.symbol} /><span>{position.side}</span><span>Contracts: {position.contracts}</span>
                 <span>Entry: {position.entry_price}</span><span>Unrealized PnL: {position.unrealized_pnl}</span>
               </div>
             ))}

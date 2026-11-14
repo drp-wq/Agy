@@ -1,4 +1,5 @@
 import { DiagnosticsPanel } from './components/workspaces/DiagnosticsPanel';
+import { TRADE_SYMBOL_CHART_EVENT, type TradeSymbolChartDetail } from './components/charts/TradeSymbolLink';
 import React, { useState, useEffect, useCallback, useRef, Suspense, lazy } from 'react';
 import {
   LayoutDashboard,
@@ -154,6 +155,16 @@ export default function App() {
     symbol: string;
     timeframe: Timeframe;
   } | null>(null);
+
+  useEffect(() => {
+    const openChart = (event: Event) => {
+      const { exchange, marketType, symbol } = (event as CustomEvent<TradeSymbolChartDetail>).detail;
+      if (!symbol || !['binance', 'bybit', 'okx'].includes(exchange) || !['spot', 'futures'].includes(marketType)) return;
+      setInspectedChartOpp({ exchange, marketType, symbol, timeframe: '15m' });
+    };
+    window.addEventListener(TRADE_SYMBOL_CHART_EVENT, openChart);
+    return () => window.removeEventListener(TRADE_SYMBOL_CHART_EVENT, openChart);
+  }, []);
 
   const abortRef = useRef<AbortController | null>(null);
 

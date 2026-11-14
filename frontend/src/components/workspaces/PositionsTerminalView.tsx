@@ -1,3 +1,4 @@
+import { TradeSymbolLink } from '../charts/TradeSymbolLink';
 import React, { useState, useMemo } from 'react';
 import { Search, ArrowUpDown } from 'lucide-react';
 import {
@@ -427,7 +428,7 @@ export const PositionsTerminalView: React.FC<PositionsTerminalViewProps> = ({
                                 >
                                   <td className="py-3 px-4">
                                     <div className="flex items-center gap-2">
-                                      <span className="text-white font-semibold">{pos.symbol}</span>
+                                      <TradeSymbolLink exchange={pos.exchange} marketType="futures" symbol={pos.symbol} />
                                       <SymbolChartToggleButton
                                         symbol={pos.symbol}
                                         expanded={isExpanded}

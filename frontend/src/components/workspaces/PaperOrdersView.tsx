@@ -1,3 +1,4 @@
+import { TradeSymbolLink } from '../charts/TradeSymbolLink';
 import React, { useState } from 'react';
 import { Download, Lock, ShieldCheck } from 'lucide-react';
 import { ExchangeId, LIVE_EXECUTION_PERMANENTLY_DISABLED, LiveExecutionBlockedError, MiniAppStateResponse } from '../../types/quant';
@@ -173,7 +174,7 @@ export const PaperOrdersView: React.FC<PaperOrdersViewProps> = ({ state, initDat
                         <td className="py-3 px-3">
                           <div className={`flex items-center gap-2 font-semibold uppercase ${EXCHANGE_META[ord.exchange].accentText}`}>
                             <span>
-                              {ord.exchange} · <span className="text-white">{ord.symbol}</span>
+                              {ord.exchange} · <TradeSymbolLink exchange={ord.exchange} marketType={ord.market_type} symbol={ord.symbol} />
                             </span>
                             <SymbolChartToggleButton
                               symbol={ord.symbol}
