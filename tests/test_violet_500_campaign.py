@@ -303,3 +303,22 @@ def test_violet_500_research_endpoint_auth_and_readonly_405(tmp_path: Path):
             assert body["violet"]["risk_budget"]["leverage"] == 0
     finally:
         runner.close()
+
+
+def test_partial_stale_candidate_does_not_block_global_entry_gate(tmp_path: Path):
+    runner = AllCapPaperRunner(tmp_path / "partial-stale", ExchangeRegistry(), _make_500_config(), campaign_hours=72)
+    try:
+        runner.state.update({"cycles": 2, "completed_at": datetime.now(timezone.utc).isoformat(),
+                             "worker_health": "running", "orders": [],
+                             "rejections": [{"reason": "missing_or_stale_ticker_source_timestamp"}]})
+        gate = runner.status()["entry_gate"]
+        assert gate["status"] == "OPEN"
+        assert gate["entries_allowed"] is True
+        assert gate["partial_feed_degradation"] is True
+        assert gate["stale_blocked_count"] == 1
+        runner.state["rejections"] = [{"reason": "no_verified_markets"}, {"reason": "missing_or_stale_ticker_source_timestamp"}]
+        gate = runner.status()["entry_gate"]
+        assert gate["status"] == "BLOCKED"
+        assert gate["entries_allowed"] is False
+    finally:
+        runner.close()

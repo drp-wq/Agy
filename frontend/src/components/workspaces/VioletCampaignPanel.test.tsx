@@ -218,6 +218,15 @@ describe('VioletCampaignPanel', () => {
         })}
       />
     );
+    const partialHtml = renderToStaticMarkup(
+      <VioletCampaignPanel research={makePayload({entry_gate: {
+        status: 'OPEN', reasons: [], min_notional_blocked_count: 0,
+        stale_blocked_count: 1, partial_feed_degradation: true,
+        tripped_sleeves: [], entries_allowed: true
+      }})} />
+    );
+    expect(partialHtml).toContain('PARTIAL FEED DEGRADATION');
+    expect(partialHtml).not.toContain('ENTRIES BLOCKED BY FAIL-CLOSED SAFETY');
     expect(staleHtml).toContain('ENTRY GATE: STALE');
     expect(staleHtml).toContain('STALE WORKER TELEMETRY');
   });

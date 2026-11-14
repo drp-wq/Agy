@@ -379,9 +379,6 @@ class AllCapPaperRunner:
         elif orders_count == 0 and min_notional_blocked > 0:
             gate_status = 'BLOCKED'
             reasons.append('min_order_notional_blocked')
-        elif orders_count == 0 and stale_blocked > 0:
-            gate_status = 'BLOCKED'
-            reasons.append('stale_market_data_blocked')
         else:
             gate_status = 'OPEN'
 
@@ -393,6 +390,7 @@ class AllCapPaperRunner:
             'reasons': reasons,
             'min_notional_blocked_count': min_notional_blocked,
             'stale_blocked_count': stale_blocked,
+            'partial_feed_degradation': stale_blocked > 0 and not no_markets,
             'tripped_sleeves': tripped_sleeves,
             'entries_allowed': self.campaign.entries_allowed() and gate_status == 'OPEN',
         }

@@ -115,6 +115,7 @@ export interface VioletEntryGate {
   reasons: string[];
   min_notional_blocked_count: number;
   stale_blocked_count: number;
+  partial_feed_degradation?: boolean;
   tripped_sleeves: string[];
   entries_allowed: boolean;
 }

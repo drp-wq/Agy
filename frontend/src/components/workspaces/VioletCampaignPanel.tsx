@@ -139,6 +139,12 @@ export const VioletCampaignPanel: React.FC<VioletCampaignPanelProps> = ({ resear
             </div>
           )}
 
+          {gate?.partial_feed_degradation && !isStale && !isBlocked && (
+            <div role="status" className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3.5 py-2.5 text-xs font-mono text-amber-200">
+              PARTIAL FEED DEGRADATION · {gate.stale_blocked_count} stale-data candidate rejection(s). Affected candidates remain rejected; the global entry gate is not blocked.
+            </div>
+          )}
+
           {/* Top 4 KPIs: 500 Budget | Cycle & Window | Current P&L vs Historical P&L | Risk Budget */}
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
             <div className="rounded-xl bg-[#080305] border border-[#ff3555]/25 p-3.5 space-y-1">
