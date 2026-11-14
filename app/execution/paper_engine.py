@@ -53,6 +53,9 @@ class PaperExecutionEngine:
         self.fee_schedule = fee_schedule if fee_schedule is not None else dict(EXCHANGE_FEE_SCHEDULE)
         self.marketable_limit_taker = marketable_limit_taker
         self._lock = threading.RLock()
+        # Standalone fixtures may supply their own ingestion. The production
+        # service binds this gate to the historical funding worker's readiness.
+        self.funding_gate = None
 
     def ensure_bot_account(self, bot_id: str, exchange: ExchangeId, initial_equity_usd: float) -> dict[str, Any]:
         return self.db.ensure_account(bot_id, exchange.value, initial_equity_usd)
@@ -173,6 +176,13 @@ class PaperExecutionEngine:
                 and p.symbol==signal.symbol and p.market_type==signal.market_type),None)
             opposite = owned is not None and owned.direction!=signal.direction
             requested_qty = round(requested_notional_usd/snapshot.last_price,6) if not invalid and snapshot is not None else 0
+            funding_ready=True
+            if (signal.market_type==MarketType.PERP and not (opposite and requested_qty<=owned.qty)
+                    and self.funding_gate is not None):
+                try:
+                    funding_ready=self.funding_gate(bot_id,signal.exchange,signal.symbol)
+                except Exception:
+                    funding_ready=False
             if invalid:
                 decision = RiskDecision(approved=False,reason='invalid_execution_inputs')
             elif snapshot is None:
@@ -185,6 +195,8 @@ class PaperExecutionEngine:
                     # Reductions remain possible at exposure caps and during an
                     # entry circuit breaker. They cannot create new exposure.
                     decision = RiskDecision(approved=True,reason='reduce_only',adjusted_qty=requested_qty)
+            elif not funding_ready:
+                decision = RiskDecision(approved=False,reason='funding_evidence_unavailable_for_new_exposure')
             else:
                 closing_qty = owned.qty if opposite else 0
                 net_notional = max(0,requested_notional_usd-closing_qty*snapshot.last_price) if opposite else requested_notional_usd
@@ -195,7 +207,6 @@ class PaperExecutionEngine:
                     snapshot=snapshot, exchange_healthy=exchange_healthy)
                 if opposite and decision.approved:
                     decision.adjusted_qty = round(decision.adjusted_qty+closing_qty,6)
-
 
             try:
                 paper_protection.validate(signal)

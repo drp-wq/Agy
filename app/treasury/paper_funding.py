@@ -58,9 +58,23 @@ def settle_paper_funding(db, treasury, *, settlement_id: str, bot_id: str,
     return {'settlement_id':settlement_id,'duplicate':duplicate,'amount_usd':str(amount)}
 
 
+def validate_funding_interval(settlement_at, interval_seconds, interval_start_at=None):
+    """Accept exact observed venue timestamps only with an evidenced predecessor."""
+    if settlement_at.tzinfo is None or settlement_at.utcoffset() is None:
+        raise ValueError('Timezone-aware settlement timestamp required')
+    if (not isinstance(interval_seconds, (int, float)) or isinstance(interval_seconds, bool)
+            or not math.isfinite(interval_seconds) or interval_seconds <= 0):
+        raise ValueError('Positive finite funding interval required')
+    if interval_start_at is None:
+        if settlement_at.microsecond or not isinstance(interval_seconds, int) or int(settlement_at.timestamp()) % interval_seconds:
+            raise ValueError('Settlement must be an exact UTC interval boundary')
+    elif interval_start_at.tzinfo is None or interval_start_at.utcoffset() is None or (settlement_at-interval_start_at).total_seconds()!=interval_seconds:
+        raise ValueError('Evidenced interval start does not match settlement interval')
+
+
 def settle_position_funding(db, treasury, *, bot_id: str, exchange: str,
                             symbol: str, settlement_at: datetime,
-                            interval_seconds: int, rate: str, mark_price: str,
+                            interval_seconds: int | float, rate: str, mark_price: str,
                             exposure_history: list[dict], evidence: str,
                             interval_start_at: datetime | None = None, conn=None) -> dict:
     """Settle one evidenced linear USDT perpetual interval, never current exposure.
@@ -75,17 +89,7 @@ def settle_position_funding(db, treasury, *, bot_id: str, exchange: str,
 
     if not symbol.endswith('/USDT'):
         raise ValueError('Only linear USDT perpetual funding is supported')
-    if settlement_at.tzinfo is None or settlement_at.utcoffset() is None:
-        raise ValueError('Timezone-aware settlement timestamp required')
-    if not isinstance(interval_seconds, int) or isinstance(interval_seconds, bool) or interval_seconds <= 0:
-        raise ValueError('Positive integer funding interval required')
-    if settlement_at.microsecond:
-        raise ValueError('Settlement must use an exact second boundary')
-    if interval_start_at is None:
-        if int(settlement_at.timestamp()) % interval_seconds:
-            raise ValueError('Settlement must be an exact UTC interval boundary')
-    elif interval_start_at.tzinfo is None or interval_start_at.utcoffset() is None or (settlement_at-interval_start_at).total_seconds()!=interval_seconds:
-        raise ValueError('Evidenced interval start does not match settlement interval')
+    validate_funding_interval(settlement_at,interval_seconds,interval_start_at)
     if not evidence.strip() or not exposure_history:
         raise ValueError('Funding source and exposure history required')
     funding_rate, mark = Decimal(rate), Decimal(mark_price)

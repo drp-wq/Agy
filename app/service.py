@@ -23,6 +23,8 @@ from app.treasury import AgentStrategyAllocator, UnifiedTreasuryLedger, Attribut
 from app.treasury.reconciliation_audit import audit_paper_pnl_coverage
 from app.treasury.paper_funding import settle_paper_funding
 from app.treasury.funding_coordinator import settle_captured_funding
+from app.treasury.funding_worker import PaperFundingWorker
+from app.core.models import MarketType
 from app.wallets import SolanaWatchOnlyMonitor, load_watch_only_wallets
 from app.telegram.adapter import TelegramAlertAdapter
 from app.telegram.commands import TelegramCommandHandler
@@ -74,6 +76,11 @@ class TradingEngineService:
             if self.treasury is not None
             else None
         )
+        self.funding_worker = PaperFundingWorker(self.db,self.treasury,self.registry,
+            probe_keys={(bot.bot_id,bot.exchange.value,symbol)
+                        for bot in self.bot_manager.bots.values() if bot.market_type==MarketType.PERP
+                        for symbol in bot.symbols})
+        self.paper_engine.funding_gate = self.funding_worker.can_increase
         self.watch_only_wallets = load_watch_only_wallets(
             self.config.watch_only_wallets.registry_path
         )
@@ -230,6 +237,7 @@ class TradingEngineService:
 
     async def run_cycle(self, fetch_all_tfs: bool = False) -> dict[str, Any]:
         assert_paper_only("paper")
+        funding_report = await self.funding_worker.run_once()
         snapshots_list = await self.scanner.scan_all(fetch_all_tfs=fetch_all_tfs)
         closed_exits = self.paper_engine.mark_to_market_and_check_exits(self.scanner.latest_snapshots)
         signals = self.orchestrator.generate_signals(snapshots_list)
@@ -257,6 +265,7 @@ class TradingEngineService:
             "signals": len(signals),
             "orders_processed": len(orders),
             "mid_low_cap": mid_low_cap_summary,
+            "funding": funding_report,
         }
 
     async def sync_watch_only_wallets(self, force: bool = False) -> list[dict[str, Any]]:
@@ -343,6 +352,7 @@ class TradingEngineService:
         return {
             "mode": "PAPER_ONLY",
             "live_execution_disabled": LIVE_EXECUTION_PERMANENTLY_DISABLED,
+            "paper_funding": self.funding_worker.report,
             "generated_at": now_ts,
             "cycle_count": self.cycle_count,
             "last_cycle_at": self.last_cycle_at.isoformat() if self.last_cycle_at else None,

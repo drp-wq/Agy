@@ -66,6 +66,7 @@ def run():
                     'orders':orders,'funding':posted,'closed_interval':later,'account':account,
                     'exposure_events':[dict(r) for r in db._conn.execute('SELECT * FROM paper_exposure_events ORDER BY seq')],
                     'settlements':[dict(r) for r in db._conn.execute('SELECT * FROM paper_funding_settlements ORDER BY settlement_id')],
+                    'interval_observations':[dict(r) for r in db._conn.execute('SELECT * FROM paper_funding_interval_observations ORDER BY settlement_id,evidence_hash')],
                     'journal_events':db.list_ledger_events(),
                     'cash_equation':'500 - 0.4 trading fees + signed funding; no trade gain/loss',
                     'restart_duplicate_verified':True})

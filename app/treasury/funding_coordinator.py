@@ -6,19 +6,20 @@ Callers must deliver each verified venue event; unobserved history stays blocked
 from __future__ import annotations
 
 import json
+import hashlib
 from datetime import datetime, timezone
 from decimal import Decimal
 
 from app.core.security import assert_paper_only
 from app.treasury import paper_exposure
-from app.treasury.paper_funding import settle_position_funding
+from app.treasury.paper_funding import settle_position_funding, validate_funding_interval
 
 
 def settle_captured_funding(db, treasury, *, bot_id: str, exchange: str,
                             symbol: str, settlement_at: datetime,
-                            interval_seconds: int, rate: str, mark_price: str,
+                            interval_seconds: int | float, rate: str, mark_price: str,
                             source: dict, interval_start_at: datetime | None = None,
-                            now: datetime | None = None) -> dict:
+                            now: datetime | None = None, interval_evidence: dict | None = None) -> dict:
     """Exposure, cash, attribution and dashboard event commit together.
 
     A closed position remains discoverable through ``paper_exposure.keys``.
@@ -37,17 +38,44 @@ def settle_captured_funding(db, treasury, *, bot_id: str, exchange: str,
         raise ValueError('Venue endpoint and event identity required')
     # Reject NaN and unsupported objects rather than stringify ambiguous evidence.
     source_json = json.dumps(source, sort_keys=True, allow_nan=False)
+    validate_funding_interval(settlement_at,interval_seconds,interval_start_at)
     with db.transaction() as conn:
         exposure = paper_exposure.exposure_at(db, bot_id=bot_id, exchange=exchange,
                                                symbol=symbol, at=settlement_at)
         evidence = json.dumps({'venue': json.loads(source_json),
                                'exposure_event_id': exposure['event_id'],
                                'model': 'paper_linear_usdt_8dp_v1'}, sort_keys=True)
+        stored_seconds, stored_start=interval_seconds, interval_start_at
+        # Adjacent history observations can change when a venue publishes a
+        # missed event late. Preserve the original settlement unchanged, and
+        # append the new interval observation. Only this explicitly modelled
+        # non-economic metadata may vary: source event, rate, mark, exposure and
+        # amount are still compared by the ordinary settlement duplicate guard.
+        if (exchange=='binance' and source.get('endpoint')=='https://fapi.binance.com/fapi/v1/fundingRate'
+                and source.get('interval_policy')=='observed_adjacent_native_events'):
+            table=conn.execute("SELECT 1 FROM sqlite_master WHERE name='paper_funding_settlements' AND type='table'").fetchone()
+            if table:
+                identifier=f'linear:{exchange}:{bot_id}:{symbol}:{settlement_at.astimezone(timezone.utc).isoformat()}'
+                old=conn.execute('SELECT evidence FROM paper_funding_settlements WHERE settlement_id=?',(identifier,)).fetchone()
+                if old:
+                    old_payload=json.loads(old['evidence'])
+                    if old_payload.get('source')==evidence:
+                        stored_seconds=old_payload['interval_seconds']
+                        stored_start=datetime.fromisoformat(old_payload['interval_start_at']) if old_payload['interval_start_at'] else None
         result = settle_position_funding(db, treasury, bot_id=bot_id,
             exchange=exchange, symbol=symbol, settlement_at=settlement_at,
-            interval_seconds=interval_seconds, rate=rate, mark_price=mark_price,
+            interval_seconds=stored_seconds, rate=rate, mark_price=mark_price,
             exposure_history=[exposure], evidence=evidence,
-            interval_start_at=interval_start_at, conn=conn)
+            interval_start_at=stored_start, conn=conn)
+        observation=json.dumps({'interval_seconds':interval_seconds,
+            'interval_start_at':interval_start_at.astimezone(timezone.utc).isoformat() if interval_start_at else None,
+            'source':source,'interval_evidence':interval_evidence},sort_keys=True,allow_nan=False)
+        conn.execute('''CREATE TABLE IF NOT EXISTS paper_funding_interval_observations (
+            settlement_id TEXT NOT NULL, evidence_hash TEXT NOT NULL,
+            observed_at TEXT NOT NULL, evidence_json TEXT NOT NULL,
+            PRIMARY KEY(settlement_id,evidence_hash))''')
+        conn.execute('INSERT OR IGNORE INTO paper_funding_interval_observations VALUES (?,?,?,?)',
+            (result['settlement_id'],hashlib.sha256(observation.encode()).hexdigest(),now.isoformat(),observation))
         # Funding is a separate cash component. Do not also put it into the
         # event's trade realized-P&L field, which downstream sums separately.
         db.append_ledger_event(event_id=f"funding:{result['settlement_id']}",
