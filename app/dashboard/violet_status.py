@@ -52,6 +52,11 @@ def install_violet_status(
         result = await run_in_threadpool(persistence_health, app)
         return JSONResponse(result, status_code=200 if result['status'] == 'ok' else 503)
 
+    @app.get('/api/mobile/portfolio', dependencies=[auth_dep])
+    async def mobile_portfolio():
+        from app.dashboard.mobile_portfolio import build_mobile_portfolio
+        return await run_in_threadpool(build_mobile_portfolio, runner)
+
     @app.get('/api/violet/all-cap', dependencies=[auth_dep])
     async def all_cap_status():
         return runner.status() if hasattr(runner, 'status') else runner.state

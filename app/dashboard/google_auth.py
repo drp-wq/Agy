@@ -31,5 +31,5 @@ def install(app):
     if enabled:
         oauth.register(name="google", client_id=cfg["GOOGLE_CLIENT_ID"], client_secret=cfg["GOOGLE_CLIENT_SECRET"],
                        server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
-                       client_kwargs={"scope": "openid email profile"})
+                       client_kwargs={"scope": "openid email profile", "code_challenge_method": "S256"})
     return cfg, oauth, enabled

@@ -13,3 +13,5 @@ As of 2026-11-14T14:18:27.036817+00:00: 156 samples from 2026-11-14T09:53:35.669
 VERIFIED: existing monitoring timers are present; operating services were active at inspection; fixture recovery/idempotency tests pass. Full evidence: evidence/stability-current.json, timers.txt, services.txt. Operating observations are retained in the campaign’s 72h-observations.jsonl.
 
 NOT TESTED: production worker crash injection, database outage injection, intentional container restart, OAuth refresh recovery, and sustained mobile reconnection. Existing services were not restarted merely to claim a recovery pass. No running Docker containers were listed. A future end timestamp is a schedule, not a passing result. Analyze recorded failures before classifying the eventual window.
+
+Latest sample check (2026-11-14T14:41:45.019205+00:00): 172 samples spanning 4.7857 hours, one degraded sample, maximum gap 931.293478s; latest fill/position counts 1/1. Required 72-hour gate remains NOT PASSED. Historical journal exception classes include ValueError, NetworkError and ExchangeOutageError; error counts alone do not establish a root cause.

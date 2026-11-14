@@ -272,7 +272,7 @@ class SecretRedactionFilter(logging.Filter):
     """Logging filter that scrubs registered secrets and credential-like patterns."""
 
     _KEY_VALUE_PATTERN = re.compile(
-        r"(?i)(api[_-]?key|api[_-]?secret|passphrase|secret|password|token|authorization)\s*[:=]\s*['\"]?([^\s,'\"&]+)['\"]?"
+        r"(?i)(api[_-]?key|api[_-]?secret|passphrase|secret|password|token|authorization|code_verifier|code)\s*[:=]\s*['\"]?([^\s,'\"&]+)['\"]?"
     )
 
     def __init__(self, secrets: Iterable[str] = ()) -> None:

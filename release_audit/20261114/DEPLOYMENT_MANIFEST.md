@@ -24,3 +24,7 @@ Checkpoint hashes: evidence/discovery.json. Evidence checksums: SHA256SUMS. Debu
 Final Android result: VERIFIED debug build; 14 automated tests, 0 failures, 0 errors. APK: artifacts/violet-scarlet-pro-debug.apk; SHA-256 64cd5f30e2629eecda26fc9cd557f83beb438a30adb699000c8974bfd7aa210f. Physical-device and server integration gates remain pending.
 
 Validated backend candidate source commit: 69b421e12fad2b2c69c00668f9b79bb47d2da7b8. Android native source commit: 1c543250fc758aa76bb22b07a7509c7a40b507aa. Neither was deployed/pushed. Android build also used the uploaded .env.example and app/google-services.json; their checksums are recorded separately in evidence/android-input-config-hashes.json (values not disclosed). Backend source tests: 217 passed; Android 14 passed.
+
+A second native-integration candidate has been validated locally (see NATIVE_INTEGRATION_REPORT.md). Latest APK: artifacts/violet-scarlet-pro-native-integration-debug.apk; SHA-256 680d4a44047d7f74729b2b6c493febf48bcf057aa90534e6b4a621e2e43fb0df. Native session storage is a separate sidecar, created lazily only when authentication is used. No production restart or deployment was performed. Candidate source commits are recorded after committing the reviewed source.
+
+Validated native source commit: 2d0872133aa10940e73aa2b20a189bda5876c828. Original input/config hashes are retained in evidence/android-input-config-hashes.json; no release signing key or production credential is part of this source commit.

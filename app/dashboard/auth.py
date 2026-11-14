@@ -6,7 +6,7 @@ import os
 import secrets
 from pathlib import Path
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 
 from app.core.logging_setup import register_sensitive_value
@@ -72,8 +72,11 @@ class DashboardAuthConfig:
 
 def make_auth_dependency(auth_cfg: DashboardAuthConfig):
     def _require_auth(
+        request: Request,
         credentials: HTTPBasicCredentials | None = Depends(security),
     ) -> str:
-        return auth_cfg.verify(credentials)
+        from app.dashboard.mobile_auth import authenticate_native
+        native = authenticate_native(request)
+        return native if native is not None else auth_cfg.verify(credentials)
 
     return _require_auth

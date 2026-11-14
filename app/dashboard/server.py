@@ -4,22 +4,24 @@ from __future__ import annotations
 
 from pathlib import Path
 import secrets
+import time
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlencode
 import json
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, ConfigDict
 
 from app.core.config import BASE_DIR
 from app.core.models import ExchangeId, MarketType
 from app.core.security import LIVE_EXECUTION_PERMANENTLY_DISABLED, assert_paper_only
-from app.dashboard.auth import DashboardAuthConfig, make_auth_dependency, security
+from app.dashboard.auth import DashboardAuthConfig, security
 from app.dashboard.candles import CandleFeedService
 from app.dashboard.google_auth import install as install_google, CALLBACK
+from app.dashboard.mobile_auth import MobileSessionStore, authenticate_native, validate_launch, REDIRECT, MobileAttemptLimiter
 from app.dashboard.miniapp_presenter import (
     build_miniapp_health_payload,
     build_miniapp_state_payload,
@@ -53,6 +55,27 @@ class PaperRebalanceRequest(BaseModel):
     apply: bool = False
 
 
+
+class MobileExchangeRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    code: str = Field(min_length=43, max_length=128)
+    code_verifier: str = Field(min_length=43, max_length=128)
+    redirect_uri: str = Field(max_length=200)
+    audience: str = Field(max_length=100)
+
+
+class MobileRefreshRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    refresh_token: str = Field(min_length=43, max_length=128)
+    audience: str = Field(max_length=100)
+
+
+class MobileLoginRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    audience: str = Field(max_length=100)
+    platform: str = Field(default='android', max_length=20)
+
+
 def create_dashboard_app(
     service: TradingEngineService,
     auth_config: DashboardAuthConfig | None = None,
@@ -64,8 +87,10 @@ def create_dashboard_app(
         openapi_url=None,
     )
     auth_cfg = auth_config or DashboardAuthConfig.load_or_create()
-    basic_auth = make_auth_dependency(auth_cfg)
     google_cfg, oauth, google_enabled = install_google(app)
+    app.state.mobile_sessions = MobileSessionStore(
+        service.db.db_path.parent / 'mobile_auth.sqlite3', google_cfg.get('GOOGLE_ALLOWED_EMAIL', ''))
+    mobile_attempts = MobileAttemptLimiter()
     candle_feed = CandleFeedService()
 
     if STATIC_MINIAPP_ASSETS_DIR.exists():
@@ -98,10 +123,13 @@ def create_dashboard_app(
         raise HTTPException(status_code=403, detail="CSRF validation failed")
 
     def require_auth(request: Request, credentials=Depends(security)) -> str:
+        native = authenticate_native(request)
+        if native is not None:
+            return native
         if google_enabled and request.session.get("google_email") == google_cfg["GOOGLE_ALLOWED_EMAIL"].lower():
             _verify_session_csrf(request)
             return request.session["google_email"]
-        return basic_auth(credentials)
+        return auth_cfg.verify(credentials)
 
     def require_miniapp_auth(request: Request, credentials=Depends(security)) -> str:
         init_data = request.headers.get("X-Telegram-Init-Data")
@@ -122,7 +150,22 @@ def create_dashboard_app(
     async def google_start(request: Request):
         if not google_enabled:
             raise HTTPException(status_code=503, detail="Google login not configured")
-        return await oauth.google.authorize_redirect(request, google_cfg.get("GOOGLE_OAUTH_CALLBACK_URL") or CALLBACK)
+        callback = google_cfg.get("GOOGLE_OAUTH_CALLBACK_URL") or CALLBACK
+        if request.query_params.get('platform') == 'android':
+            if request.url.scheme != 'https':
+                raise HTTPException(400, 'Native authorization requires HTTPS')
+            launch = validate_launch(request.query_params)
+            # Keep provider state and native handoff in the same browser cookie origin.
+            canonical = urlparse(callback)
+            if (canonical.scheme != 'https' or canonical.path != '/auth/google/callback' or
+                    canonical.query or canonical.fragment or canonical.username is not None):
+                raise HTTPException(503, 'Invalid configured OAuth callback')
+            if request.url.netloc != canonical.netloc:
+                return RedirectResponse(f'https://{canonical.netloc}/auth/google?' + urlencode(dict(request.query_params)), status_code=303)
+            request.session['native_launch'] = launch | {'created_at': time.time()}
+        else:
+            request.session.pop('native_launch', None)
+        return await oauth.google.authorize_redirect(request, callback)
 
     @app.get("/auth/google/callback")
     async def google_callback(request: Request):
@@ -130,19 +173,62 @@ def create_dashboard_app(
             raise HTTPException(status_code=503, detail="Google login not configured")
         try:
             token = await oauth.google.authorize_access_token(request)
+            # Authlib validates OIDC signature, issuer, audience and nonce before
+            # populating userinfo. Do not accept a non-OIDC token response.
+            if not token.get('id_token'):
+                raise ValueError('Google ID token required')
             info = token.get("userinfo") or {}
         except Exception:
             raise HTTPException(status_code=401, detail="Google authentication failed")
         email = str(info.get("email", "")).lower()
         if not info.get("email_verified") or not email or email != google_cfg["GOOGLE_ALLOWED_EMAIL"].lower():
             raise HTTPException(status_code=403, detail="Account not authorized")
+        native_launch = request.session.get('native_launch')
         request.session.clear()
+        if native_launch:
+            age = time.time() - native_launch.get('created_at', 0)
+            if not 0 <= age <= 600:
+                raise HTTPException(401, 'Native authorization request expired')
+            code = app.state.mobile_sessions.issue_handoff(native_launch, email, str(info.get('name', email)))
+            return RedirectResponse(REDIRECT + '?' + urlencode({'code': code, 'state': native_launch['state']}), status_code=303)
         request.session["google_email"] = email
         request.session["csrf_token"] = secrets.token_urlsafe(32)
         return RedirectResponse("/", status_code=303)
 
+    def require_mobile_tls(request: Request):
+        if request.url.scheme != 'https':
+            raise HTTPException(400, 'Native authentication requires HTTPS')
+        mobile_attempts.check(request.client.host if request.client else 'unknown')
+
+    @app.post('/auth/mobile/exchange', dependencies=[Depends(require_mobile_tls)])
+    async def mobile_exchange(payload: MobileExchangeRequest):
+        return app.state.mobile_sessions.exchange(payload.code, payload.code_verifier, payload.redirect_uri, payload.audience)
+
+    @app.post('/auth/mobile/refresh', dependencies=[Depends(require_mobile_tls)])
+    async def mobile_refresh(payload: MobileRefreshRequest):
+        return app.state.mobile_sessions.refresh(payload.refresh_token, payload.audience)
+
+    @app.post('/auth/login', dependencies=[Depends(require_mobile_tls)])
+    async def mobile_basic_login(payload: MobileLoginRequest, credentials=Depends(security)):
+        from app.dashboard.mobile_auth import AUDIENCE
+        auth_cfg.verify(credentials)
+        if payload.audience != AUDIENCE or payload.platform != 'android':
+            raise HTTPException(400, 'Invalid native audience')
+        return app.state.mobile_sessions.issue_authenticated(google_cfg.get('GOOGLE_ALLOWED_EMAIL', ''), 'Dashboard Operator')
+
+    @app.get('/auth/mobile/session')
+    async def mobile_session(request: Request):
+        email = authenticate_native(request)
+        if email is None:
+            raise HTTPException(401, 'Bearer session required')
+        return {'email': email, 'scope': 'paper:read', 'mode': 'PAPER_ONLY'}
+
     @app.post("/auth/logout")
     async def google_logout(request: Request):
+        if request.headers.get('authorization', '').lower().startswith('bearer '):
+            require_mobile_tls(request)
+            app.state.mobile_sessions.revoke(request.headers['authorization'][7:])
+            return {'status': 'ok'}
         if google_enabled and request.session.get("google_email"):
             _verify_session_csrf(request)
         request.session.clear()
