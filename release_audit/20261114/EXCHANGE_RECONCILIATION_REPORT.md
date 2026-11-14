@@ -17,3 +17,5 @@ Endpoint and permission evidence: evidence/exchange-private.json and private-end
 Binance primary API reference for transfer-history query semantics: https://binance.github.io/binance-connector-js/classes/_binance_wallet.WalletRestAPI.AssetApi.html#queryuseruniversaltransferhistory . Defaults cover seven days and retention is limited; this must not be reported as all-time completeness.
 
 VERIFIED bounded Binance transfer-history reads: MAIN_UMFUTURE returned 2/2 records and UMFUTURE_MAIN returned 6/6 records in the endpoint default seven-day window. No transfers were executed. Full retained-history pagination and deposit/withdrawal reconciliation remain incomplete.
+
+Public funding probe 2026-11-14T15:31:08Z: Binance and Bybit GET responses captured; OKX HTTP request failed. Binance native fundingTime includes millisecond offsets, and Bybit history lacks markPrice. These observations do not verify full settlement history or any additional private permissions. evidence/funding-public-sources.json.

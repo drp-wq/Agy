@@ -34,3 +34,7 @@ Native integration backend source commit: 7595055e2d3e59dd2c457a2e100c87fdfdd6a2
 Protection candidate validated locally: 250 backend tests and 21 Android tests. Latest APK artifacts/violet-scarlet-pro-protection-debug.apk, SHA-256 99b9bbe54365a0994b70115bbd8cd0ef00e6e78e624a1acd51a1e18f7a8c393c. No production deployment or restart; candidate source commits recorded after review. See PAPER_PROTECTION_IMPLEMENTATION_REPORT.md and rollback limitations.
 
 Validated protection backend source commit: 1d29f16a7ee44e5cf5e7d7cc011f844b4a51c3ad. Native contract source commit: c4e3725b8e868b232e60886b939ac2816583ee24. Both are local candidates; neither has been pushed or deployed. Existing production base remains 0f2a0d2dd752eafdd59bbeb8d93f0c440bf9245a with local modifications, so no exact deployed-commit certification is claimed.
+
+Final funding-capture validation: backend 267 passed, 0 failed, 2 warnings in 63.43s; focused funding/mandatory gates 37 passed in 4.33s; frontend typecheck, 42 tests and build passed. Tested backend candidate source commit: e52906332c15faa098e449f911edc512a95727ec. This is a local candidate, not deployed or pushed. Commands/durations: evidence/validation-funding-commands.json; full test results: evidence/backend-funding-final.xml.
+
+Funding source manifest: evidence/funding-source-manifest.json. Eight source files were committed with narrow staging; unrelated arbitrage/verification work remains untouched. Operating service inventory and exact deployed-commit uncertainty are unchanged.

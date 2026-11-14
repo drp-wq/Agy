@@ -1,39 +1,39 @@
 # FINAL READINESS REPORT
 
-Observed/reported: 2026-11-14T14:21:00.209895+00:00
+Observed/reported: 2026-11-14T15:39:27.973389+00:00
 
-Status meanings: VERIFIED = supported by this audit’s evidence; PARTIALLY VERIFIED = limited scope; BLOCKED = unresolved requirement; NOT TESTED = no completed evidence.
+Verdict: **BLOCKED**. This is an engineering checkpoint. No release, live approval or candidate deployment is claimed.
 
-Verdict: BLOCKED. This is an evidence-backed audit checkpoint, not a completed release or live authorization.
+Status meanings: VERIFIED = evidence supports the stated scope; PARTIALLY VERIFIED = limited scope; BLOCKED = unresolved requirement; NOT TESTED = no completed evidence.
 
-| Required gate | Status | Evidence or remaining work |
+| Required gate | Status | Evidence and limitation |
 |---|---|---|
-| Historical -82.214432 discrepancy | VERIFIED | Original 18 exits reproduced; unchanged source orders; current snapshot gap zero |
-| Economic funding | PARTIALLY VERIFIED | Signed-rate calculator, atomic posting and recovery tests; scheduler/history capture not integrated |
-| Full paper lifecycle | BLOCKED | Candidate protection/partial recovery tested; resting maker, funding/journal integration and deployed lifecycle remain incomplete |
-| Spot/futures economic accounting | PARTIALLY VERIFIED | Replay and fixtures agree; complete independent custody model not certified |
-| Fees/slippage/margin/liquidation | PARTIALLY VERIFIED | Taker classification and actual-cost checks repaired; true maker/venue-tier/dust gaps remain |
-| Exchange reconciliation | PARTIALLY VERIFIED | Native read-only connectivity; complete retained history/transfer coverage incomplete |
-| 500 USDT account | PARTIALLY VERIFIED | VPS campaign verified; Candidate Android uses authoritative VPS projection; deployment/device verification pending |
-| Multi-day stability | BLOCKED | Only hours elapsed; degraded sample and observation gaps |
-| Android build/tests | PARTIALLY VERIFIED | Candidate APK: 20 tests passed; physical device unavailable |
-| Dashboard interaction | PARTIALLY VERIFIED | 42 frontend tests; browser navigation/controls/screenshots; full overlay/indicator correctness not proven |
-| Authentication/security | BLOCKED | Candidate PKCE/session endpoints tested; deployed provider flow pending |
-| Structural live block | PARTIALLY VERIFIED | Backend guard tests pass; production dirty checkout not release-certified |
-| Recovery/persistence | PARTIALLY VERIFIED | Fixture tests and backups; runtime disruption matrix incomplete |
-| Operator checklist | BLOCKED | Deployment provenance, OAuth/mobile registration, soak completion and release review pending |
-| Required approvals | NOT TESTED | No live, wallet, key-change or destructive action approval requested or inferred |
+| Historical −82.214432 discrepancy | VERIFIED | 18 exits: −76.729666 gross and −5.484766 exit fees; captured current replay gap zero; all 3516 original orders preserved. Full funding history remains separate. |
+| Funding economically correct | PARTIALLY VERIFIED | Signed-rate tests, durable exposure, atomic cash/attribution/journal, recovery/concurrency and 8dp rounding tests. Actual venue delivery/scheduler unresolved. |
+| Complete paper lifecycle | BLOCKED | Three entry-to-exit synthetic cases, staged targets, stop/trail and liquidation model tested; resting-maker execution and deployed integration incomplete. |
+| Spot/futures accounting | PARTIALLY VERIFIED | Replay and independent cash/fees/margin equations agree within tested scope; full custody/history not certified. |
+| Fees/slippage/margin/liquidation | PARTIALLY VERIFIED | Actual-cost checks and taker classification repaired; maker, venue tiers, protective precision and dust gaps remain. |
+| Exchange reconciliation | PARTIALLY VERIFIED | Read-only Binance/Bybit/OKX authenticated endpoints sampled; native Binance futures and bounded transfers recovered. Complete histories/permissions matrix unresolved. |
+| Authoritative 500 USDT campaign | PARTIALLY VERIFIED | Existing five 100-USDT sleeves preserved; candidate Android projects server account. Deployed mobile verification pending. |
+| Required multi-day stability | BLOCKED | Existing deployment only: 210 samples spanning 5.705580h, one degraded sample, max gap 931.293478s. 72h ends Nov17 09:53:05.553807 UTC; candidate needs its own full observation. |
+| Android build and available tests | PARTIALLY VERIFIED | Debug APK built; 21 tests, zero failures/errors; no physical Pixel/emulator validation, verified Room-v1 migration or complete provider flow. |
+| Dashboard functions/charts | PARTIALLY VERIFIED | Typecheck, 42 frontend tests/build; sampled browser views, controls, pan/zoom/mobile layout. Full indicators/overlays not independently certified. |
+| Authentication/security | BLOCKED | Candidate PKCE/read-only session tests pass; production Google-provider/native flow, App Check, authorization and complete session recovery remain pending. |
+| Live-order structural block | PARTIALLY VERIFIED | Candidate permanent guard and GET-only adapter tests; production dirty checkout lacks exact loaded-release provenance. Credentials/permissions unchanged. |
+| Persistence/recovery | PARTIALLY VERIFIED | Transaction rollback, reopen, duplicate delivery and concurrency fixtures pass; runtime interruption matrix incomplete. |
+| Operator checklist | BLOCKED | See unresolved release gates below. |
+| Required approvals | NOT TESTED | No destructive operation, live activation, wallet operation or key/permission change was authorized or performed. |
 
-Original checkpoint candidate repairs: partial-fill economic validation; atomic evidenced funding and rate/exposure calculations; honest endpoint-level exchange status with GET-only async guards/native Binance futures queries; test OAuth isolation; Android preservation and fail-closed security changes. Backend checkpoint: 217 passing tests; frontend: typecheck, 42 tests and production build passed. These do not establish final readiness.
+Current services verified active with zero reported restarts: multi-exchange-paper.service PID673; multi-exchange-paper-audit.service PID670; multi-exchange-paper-maintenance-preview.service PID5133; caddy.service PID662. The first serves trade.187-52-118-25.sslip.io; preview also serves prottushjd.tech through the existing Caddy configuration. This is process inventory, not a soak pass.
 
-Release remains gated. No production source swap, service restart, ledger reset, exchange permission change, wallet operation, live execution or remote push was performed. Existing operating paper campaign continues. Required multi-day observation window remains 72 hours. Refer to all companion reports and raw evidence for limitations; no unavailable dependency, missing permission or unfinished test is counted as success.
+**Exact deployed commit: UNVERIFIED.** Original production checkout base is 0f2a0d2dd752eafdd59bbeb8d93f0c440bf9245a with tracked local changes; preview includes an external launcher. Loaded code cannot honestly be equated to Git HEAD. Candidate source commit is recorded in DEPLOYMENT_MANIFEST.md after validation. No remote push, production source swap, restart, paper-account reset, historical rewrite, credential change or wallet action occurred.
 
-Final Android result: VERIFIED debug build; 14 automated tests, 0 failures, 0 errors. APK: artifacts/violet-scarlet-pro-debug.apk; SHA-256 64cd5f30e2629eecda26fc9cd557f83beb438a30adb699000c8974bfd7aa210f. Physical-device and server integration gates remain pending.
+Latest native source commit: c4e3725b8e868b232e60886b939ac2816583ee24. APK: artifacts/violet-scarlet-pro-protection-debug.apk; SHA-256 99b9bbe54365a0994b70115bbd8cd0ef00e6e78e624a1acd51a1e18f7a8c393c. Actual debug signing identity was inspected; no release key was generated/replaced. Device-specific validation remains pending.
 
-Browser result: seven view-navigation checks, five chart-control clicks, and pan/zoom input delivered; 14 canvas elements rendered, no JavaScript page errors, and no horizontal overflow at 412px with reduced-motion preference. This verifies input/rendering at sampled states, not numerical correctness of every indicator/overlay or sustained real-time recovery. Screenshots: evidence/dashboard-chart.png and dashboard-mobile.png.
+Funding evidence: evidence/funding-captured-event-audit.json contains six isolated long/short positive/negative/zero scenarios with source order and event IDs, quantities, fees, funding/cash equations, restart duplicate checks and zero exposure after closure. Trade lifecycle evidence: evidence/funding-capture-lifecycle-events.json contains three isolated complete spot/futures scenarios. These are synthetic paper outcomes, never actual profits.
 
-Current native-integration checkpoint supersedes earlier Android integration gaps: see NATIVE_INTEGRATION_REPORT.md. Candidate Android now uses server portfolio data and has secure server-issued sessions; these endpoints are not deployed. New debug APK: artifacts/violet-scarlet-pro-native-integration-debug.apk; 20 tests passed; SHA-256 680d4a44047d7f74729b2b6c493febf48bcf057aa90534e6b4a621e2e43fb0df. Overall verdict remains BLOCKED.
+Release operator checklist remains incomplete: establish exact deployable provenance and compatible rollback; integrate verified funding venue history/boundaries/scheduler; finish maker and protective venue constraints; complete trade-derived journal atomicity; validate Google/native/provider/device/Room upgrade and dashboard numeric/overlay behavior; finish exchange history reconciliation and runtime recovery matrix; deploy a tested paper candidate with rollback; run its full 72h window and analyze every failure; record only an authorized push destination/branch. An existing campaign scheduled to finish does not pass any gate before observation completes.
 
-Latest validation checkpoint: full backend suite 225 passed (63.34 seconds), Android 20 passed, frontend 42 passed plus typecheck/build. New candidate endpoints and native portfolio remain undeployed; overall verdict remains BLOCKED.
+All ten required reports are present alongside implementation reports and raw evidence. Earlier checkpoint reports are retained under checkpoints/funding-integration-20261114. Independent work continues; overall readiness remains BLOCKED.
 
-Protection checkpoint supersedes earlier missing-feature statements: candidate multi-level exits, trailing stops and a documented liquidation model are implemented and tested. Full suite 250 passed; Android 21 passed; frontend 42 passed plus typecheck/build. See PAPER_PROTECTION_IMPLEMENTATION_REPORT.md for scope and remaining blockers. No candidate deployment or multi-day stability pass is claimed.
+Final funding-capture validation: backend 267 passed, 0 failed, 2 warnings in 63.43s; focused funding/mandatory gates 37 passed in 4.33s; frontend typecheck, 42 tests and build passed. Tested backend candidate source commit: e52906332c15faa098e449f911edc512a95727ec. This is a local candidate, not deployed or pushed. Commands/durations: evidence/validation-funding-commands.json; full test results: evidence/backend-funding-final.xml.

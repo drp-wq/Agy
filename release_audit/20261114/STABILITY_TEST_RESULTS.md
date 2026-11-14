@@ -17,3 +17,5 @@ NOT TESTED: production worker crash injection, database outage injection, intent
 Latest sample check (2026-11-14T14:41:45.019205+00:00): 172 samples spanning 4.7857 hours, one degraded sample, maximum gap 931.293478s; latest fill/position counts 1/1. Required 72-hour gate remains NOT PASSED. Historical journal exception classes include ValueError, NetworkError and ExchangeOutageError; error counts alone do not establish a root cause.
 
 Protection checkpoint (2026-11-14T15:13:39.628396+00:00): 194 samples across 5.3200 hours; one degraded sample; maximum gap 931.293478s. No pass. Observations concern the existing running version, not the undeployed protection candidate.
+
+Funding-capture checkpoint (2026-11-14T15:37:06Z): 210 samples spanning 5.705580 hours; one degraded worker sample and maximum gap 931.293478 seconds. Latest sampled fills/positions: 2/0. Services retained PIDs 673/670/5133/662 with zero reported restarts. No candidate deployment or candidate soak pass. Evidence: evidence/stability-funding-checkpoint.json and services-funding-checkpoint.txt.

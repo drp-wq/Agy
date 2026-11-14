@@ -19,3 +19,5 @@ NOT TESTED: authenticated Google provider interaction, Pixel hardware Keystore, 
 APK secret scan: no exact matches against 10 locally registered secret values across decompressed APK entries. This limited check is evidence against direct embedding of those values, not exhaustive decompilation or supply-chain certification. Firebase public client configuration remains distinct from private secrets.
 
 Current candidate adds native read-only HTTPS sessions, short one-use S256 handoffs, hashed token storage, absolute family expiry, refresh replay revocation, attempt limiting, code/verifier log redaction, strict Android session responses and atomic encrypted storage. See NATIVE_INTEGRATION_REPORT.md. These features are not deployed.
+
+Funding-capture checkpoint: new coordinator is an internal service method only, with paper-only guard and no HTTP route or exchange-order capability. Source dictionaries are trusted internal input; verified acquisition remains a release blocker. No exchange credential, permission, wallet, OAuth registration, live-execution setting or production session was altered.
