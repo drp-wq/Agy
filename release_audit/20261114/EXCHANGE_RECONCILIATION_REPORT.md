@@ -19,3 +19,5 @@ Binance primary API reference for transfer-history query semantics: https://bina
 VERIFIED bounded Binance transfer-history reads: MAIN_UMFUTURE returned 2/2 records and UMFUTURE_MAIN returned 6/6 records in the endpoint default seven-day window. No transfers were executed. Full retained-history pagination and deposit/withdrawal reconciliation remain incomplete.
 
 Public funding probe 2026-11-14T15:31:08Z: Binance and Bybit GET responses captured; OKX HTTP request failed. Binance native fundingTime includes millisecond offsets, and Bybit history lacks markPrice. These observations do not verify full settlement history or any additional private permissions. evidence/funding-public-sources.json.
+
+Funding-worker public validation: three actual BTC/USDT native funding events with charge-associated mark prices were retrieved credential-free through the candidate Binance adapter (evidence/funding-worker-public-history.json). No campaign DB was opened. Full account funding/history reconciliation and Bybit/OKX settlement-mark integration remain BLOCKED; these are not exchange balance/trade proofs.

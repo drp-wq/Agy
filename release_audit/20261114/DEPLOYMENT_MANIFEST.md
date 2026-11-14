@@ -38,3 +38,7 @@ Validated protection backend source commit: 1d29f16a7ee44e5cf5e7d7cc011f844b4a51
 Final funding-capture validation: backend 267 passed, 0 failed, 2 warnings in 63.43s; focused funding/mandatory gates 37 passed in 4.33s; frontend typecheck, 42 tests and build passed. Tested backend candidate source commit: e52906332c15faa098e449f911edc512a95727ec. This is a local candidate, not deployed or pushed. Commands/durations: evidence/validation-funding-commands.json; full test results: evidence/backend-funding-final.xml.
 
 Funding source manifest: evidence/funding-source-manifest.json. Eight source files were committed with narrow staging; unrelated arbitrage/verification work remains untouched. Operating service inventory and exact deployed-commit uncertainty are unchanged.
+
+Final funding-delivery validation: full backend 288 passed, zero failed, two warnings in 63.52s (evidence/backend-funding-delivery-release.xml); focused funding plus mandatory gates 58 passed in 4.72s. Frontend typecheck, 42 tests and build passed. Tested local backend candidate commit: 198cc1742d063fd54092edeba87f39dc4295aa68. No remote push or service restart/cutover occurred.
+
+Production Git base rechecked: 0f2a0d2dd752eafdd59bbeb8d93f0c440bf9245a; 14 working-tree status entries. This still cannot establish exact loaded deployment provenance. Operating paper services retain PIDs 673/670/5133 and Caddy 662, active with NRestarts=0 (evidence/services-funding-delivery.txt).

@@ -19,3 +19,5 @@ Latest sample check (2026-11-14T14:41:45.019205+00:00): 172 samples spanning 4.7
 Protection checkpoint (2026-11-14T15:13:39.628396+00:00): 194 samples across 5.3200 hours; one degraded sample; maximum gap 931.293478s. No pass. Observations concern the existing running version, not the undeployed protection candidate.
 
 Funding-capture checkpoint (2026-11-14T15:37:06Z): 210 samples spanning 5.705580 hours; one degraded worker sample and maximum gap 931.293478 seconds. Latest sampled fills/positions: 2/0. Services retained PIDs 673/670/5133/662 with zero reported restarts. No candidate deployment or candidate soak pass. Evidence: evidence/stability-funding-checkpoint.json and services-funding-checkpoint.txt.
+
+Funding-worker checkpoint (2026-11-14T15:53:41Z): 222 samples across 5.993648h; one degraded sample; maximum gap 931.293478s; latest fills/positions 2/0. Existing deployment only. Candidate not deployed; 72h gate remains NOT PASSED. Evidence: evidence/stability-funding-delivery.json.

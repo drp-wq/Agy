@@ -17,3 +17,5 @@ NOT TESTED: a single integrated test spanning all market-data/signal/risk/execut
 Latest checkpoint: 250 backend tests, 21 Android tests and 42 frontend tests passed. Three reproducible synthetic entry-to-staged-exit cases are recorded in evidence/protection-trade-events.json. The candidate does not establish full release readiness.
 
 Funding-capture checkpoint: existing spot long/futures long/futures short entry-to-exit reproduction reran successfully in evidence/funding-capture-lifecycle-events.json (three isolated synthetic cases). Candidate futures executions now capture funding exposure atomically, with post-close recovery verified. Full automatic venue funding and full trade-derived journal integration remain BLOCKED.
+
+Candidate funding worker now covers paginated Binance history, captured closed-position recovery, missed/late events, cancellation/restart and readiness gating in the service cycle. Final focused tests: 58 passed in 4.72s, including mandatory backend gates. Legacy dashboard P&L funding projection remains blocked and is being repaired separately. No production deployment/settlement or actual exchange-profit claim.
