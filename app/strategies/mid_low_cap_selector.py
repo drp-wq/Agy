@@ -64,9 +64,11 @@ class MidLowCapStrategySelector:
         self,
         orchestrator: AIStrategyOrchestrator,
         config: MidLowCapConfig | None = None,
+        fee_schedule=None,
     ) -> None:
         self.orchestrator = orchestrator
         self.config = config or MidLowCapConfig()
+        self.fee_schedule = fee_schedule if fee_schedule is not None else dict(EXCHANGE_FEE_SCHEDULE)
         self._oos_cache: dict[tuple[str, str, str, int], dict[str, Any]] = {}
 
     def _allowed_for_regime(
@@ -106,7 +108,7 @@ class MidLowCapStrategySelector:
                 "net_expectancy_r": 0.0,
             }
 
-        cache_key = (exchange.value, symbol, strategy.name, candles[-1].timestamp)
+        cache_key = (exchange.value, symbol, strategy.name, candles[-1].timestamp, fee_pct, slippage_pct)
         if cache_key in self._oos_cache:
             return self._oos_cache[cache_key]
 
@@ -248,7 +250,7 @@ class MidLowCapStrategySelector:
                 )
                 continue
 
-            fee_sched = EXCHANGE_FEE_SCHEDULE.get(
+            fee_sched = self.fee_schedule.get((snap.exchange, MarketType.SPOT, snap.symbol)) or self.fee_schedule.get(
                 (snap.exchange, MarketType.SPOT), {"taker": 0.0010}
             )
             fee_pct = fee_sched["taker"]

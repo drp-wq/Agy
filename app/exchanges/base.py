@@ -21,6 +21,7 @@ from app.core.models import (
     OrderBookSnapshot,
 )
 from app.core.security import enforce_read_only_exchange
+from app.exchanges.timestamps import source_timestamp_ms
 
 T = TypeVar("T")
 logger = logging.getLogger("multi_exchange.exchanges")
@@ -128,7 +129,7 @@ class BaseExchangeAdapter:
                 break
 
         if self._consecutive_errors >= self.outage_threshold:
-            self._circuit_open_until = time.monotonic() + self.cooldown_sec
+            self._circuit_open_until = max(self._circuit_open_until, time.monotonic() + self.cooldown_sec)
             logger.warning(
                 "Exchange %s entered outage cooldown for %.0fs after %d errors",
                 self.exchange_id.value,
@@ -170,10 +171,37 @@ class BaseExchangeAdapter:
             min_amount=float(amount_limits.get("min") or 0.0001),
             min_cost=float(cost_limits.get("min") or 5.0),
             contract_size=float(m.get("contractSize") or 1.0),
-            max_leverage=float(lev_limits.get("max") or (10.0 if market_type == MarketType.PERP else 1.0)),
+            max_leverage=float(lev_limits.get("max") or 10.0) if market_type == MarketType.PERP else 1.0,
             maker_fee=float(m.get("maker") or 0.0008),
             taker_fee=float(m.get("taker") or 0.0010),
         )
+
+    async def get_validated_spot_spec(self, symbol):
+        """Lab entry rules: require published ticks/minimums rather than defaults."""
+        markets = await self.load_markets()
+        norm = self.normalize_symbol(symbol, MarketType.SPOT)
+        market = markets.get(norm) or {}
+        if market.get('spot') is not True or market.get('active') is not True:
+            raise ValueError('unverified_active_spot_instrument')
+        precision, limits = market.get('precision', {}), market.get('limits', {})
+        amount_min = (limits.get('amount') or {}).get('min')
+        cost_min = (limits.get('cost') or {}).get('min')
+        # OKX publishes minSz, lotSz and tickSz; there is no spot min-notional rule.
+        if cost_min is None and self.exchange_id == ExchangeId.OKX and (market.get('info') or {}).get('minSz'):
+            cost_min = 0.0
+        values = [precision.get('price'), precision.get('amount'), amount_min]
+        if any(v is None or not math.isfinite(float(v)) or float(v) <= 0 for v in values):
+            raise ValueError('missing_public_instrument_ticks_or_minimum')
+        fees = [market.get('maker'), market.get('taker')]
+        if cost_min is None or not math.isfinite(float(cost_min)) or float(cost_min) < 0 or any(
+                v is None or not math.isfinite(float(v)) or not 0 <= float(v) <= .05 for v in fees):
+            raise ValueError('missing_public_instrument_cost_or_fees')
+        if getattr(self._public_client, 'precisionMode', ccxt.TICK_SIZE) != ccxt.TICK_SIZE:
+            raise ValueError('unsupported_public_precision_mode')
+        spec = await self.get_instrument_spec(norm, MarketType.SPOT)
+        return spec.model_copy(update={'price_precision':float(precision['price']),
+            'amount_precision':float(precision['amount']), 'min_amount':float(amount_min),
+            'min_cost':float(cost_min), 'maker_fee':float(fees[0]), 'taker_fee':float(fees[1])})
 
     async def fetch_ticker(self, symbol: str, market_type: MarketType) -> dict[str, Any]:
         norm = self.normalize_symbol(symbol, market_type)
@@ -183,10 +211,16 @@ class BaseExchangeAdapter:
         self, symbol: str, market_type: MarketType, limit: int = 20
     ) -> OrderBookSnapshot:
         norm = self.normalize_symbol(symbol, market_type)
-        ob = await self._run(
+        ob = await self._fetch_raw_order_book(norm, limit)
+        return self._book_snapshot(norm, market_type, ob, limit)
+
+    async def _fetch_raw_order_book(self, norm, limit):
+        return await self._run(
             lambda: self._public_client.fetch_order_book(norm, limit=limit),
             f"fetch_order_book:{norm}",
         )
+
+    def _book_snapshot(self, norm, market_type, ob, limit):
         bids = [(float(row[0]), float(row[1])) for row in (ob.get("bids") or [])[:limit] if len(row) >= 2]
         asks = [(float(row[0]), float(row[1])) for row in (ob.get("asks") or [])[:limit] if len(row) >= 2]
         best_bid = bids[0][0] if bids else 0.0
@@ -200,6 +234,7 @@ class BaseExchangeAdapter:
             symbol=norm,
             market_type=market_type,
             timestamp=datetime.now(timezone.utc),
+            source_timestamp_ms=source_timestamp_ms(ob.get("timestamp")),
             best_bid=best_bid,
             best_ask=best_ask,
             spread_bps=round(spread_bps, 3),

@@ -5,6 +5,9 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+import json
+import os
+from pathlib import Path
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Awaitable, Callable
@@ -24,6 +27,7 @@ class MarketCapBand(str, Enum):
     LOW = "low"
     MID = "mid"
     LARGE = "large"
+    MEGA = "mega"
     UNKNOWN = "unknown"
 
     @property
@@ -70,6 +74,12 @@ def classify_market_cap_band(
     """Classify a coin purely from verified circulating market cap; never infer from volume/price."""
     if ambiguous or not is_fresh or market_cap_usd is None or market_cap_usd <= 0:
         return MarketCapBand.UNKNOWN
+    if hasattr(config, "mega_cap_min_usd"):
+        import math
+        if not math.isfinite(market_cap_usd) or market_cap_usd < config.micro_cap_min_usd:
+            return MarketCapBand.UNKNOWN
+        if market_cap_usd >= config.mega_cap_min_usd:
+            return MarketCapBand.MEGA
     if market_cap_usd < config.low_cap_min_usd:
         return MarketCapBand.MICRO
     if market_cap_usd < config.low_cap_max_usd:
@@ -89,6 +99,7 @@ class MarketCapProvider:
         self,
         config: MidLowCapConfig | None = None,
         page_fetcher: PageFetcher | None = None,
+        cache_path: Path | None = None,
     ) -> None:
         self.config = config or MidLowCapConfig()
         self._page_fetcher = page_fetcher or self._fetch_coingecko_page
@@ -99,6 +110,54 @@ class MarketCapProvider:
         self._lock = asyncio.Lock()
         self.last_error: str | None = None
         self.requests_made: int = 0
+        self._refresh_failures = 0
+        self._retry_after_monotonic = 0.0
+        self.cache_path = Path(cache_path) if cache_path else None
+        self.cache_restored = False
+        self._restore_cache()
+
+    def _restore_cache(self):
+        if self.cache_path is None or not self.cache_path.exists():
+            return
+        try:
+            if self.cache_path.stat().st_size > 10_000_000:
+                raise ValueError('oversize_cap_cache')
+            saved = json.loads(self.cache_path.read_text())
+            fetched = _parse_iso_dt(saved.get('fetched_at'))
+            age = (datetime.now(timezone.utc)-fetched).total_seconds() if fetched else None
+            cache = saved.get('cache', {})
+            if not isinstance(cache, dict) or any(not isinstance(rows,list) or any(not isinstance(r,dict) for r in rows) for rows in cache.values()):
+                raise ValueError('invalid_cap_cache')
+            # Preserve original provenance and age; never re-date cached public data.
+            if age is not None and 0 <= age <= self.config.market_cap_max_age_sec:
+                self._cache, self._cache_fetched_at = cache, fetched
+                self._cache_monotonic = time.monotonic()-age
+                self.cache_restored = True
+            retry_at = _parse_iso_dt(saved.get('retry_at'))
+            if retry_at:
+                remaining = max(0, min(3600, (retry_at-datetime.now(timezone.utc)).total_seconds()))
+                self._retry_after_monotonic = time.monotonic()+remaining
+            self._refresh_failures = min(10, max(0, int(saved.get('failures',0))))
+            self.last_error = saved.get('last_error') if isinstance(saved.get('last_error'),str) else None
+        except (ValueError, TypeError, OSError):
+            self.last_error = 'invalid_persisted_market_cap_cache'
+
+    def _persist_cache(self):
+        if self.cache_path is None:
+            return
+        from datetime import timedelta
+        remaining = max(0, self._retry_after_monotonic-time.monotonic())
+        saved = {'cache':self._cache, 'fetched_at':self._cache_fetched_at.isoformat() if self._cache_fetched_at else None,
+                 'retry_at':(datetime.now(timezone.utc)+timedelta(seconds=remaining)).isoformat(),
+                 'failures':self._refresh_failures, 'last_error':self.last_error}
+        self.cache_path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = self.cache_path.with_suffix('.tmp')
+        with tmp.open('w') as stream:
+            os.chmod(tmp, 0o600)
+            json.dump(saved, stream, allow_nan=False)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(tmp, self.cache_path)
 
     async def _fetch_coingecko_page(self, page: int, per_page: int) -> list[dict[str, Any]]:
         params = {
@@ -126,6 +185,8 @@ class MarketCapProvider:
         async with self._lock:
             if not force and self._is_cache_valid():
                 return True
+            if time.monotonic() < self._retry_after_monotonic:
+                return False
 
             by_symbol: dict[str, list[dict[str, Any]]] = {}
             try:
@@ -152,13 +213,25 @@ class MarketCapProvider:
                     self._cache_fetched_at = datetime.now(timezone.utc)
                     self._cache_monotonic = time.monotonic()
                     self.last_error = None
+                    self._refresh_failures = 0
+                    self._retry_after_monotonic = 0.0
                     return True
                 self.last_error = "empty_market_cap_response"
                 return False
             except Exception as exc:
+                self._refresh_failures += 1
+                delay = min(60 * 2 ** min(self._refresh_failures - 1, 4), 900)
+                if isinstance(exc, httpx.HTTPStatusError):
+                    try:
+                        delay = max(delay, min(float(exc.response.headers.get('Retry-After', 0)), 3600))
+                    except ValueError:
+                        pass
+                self._retry_after_monotonic = time.monotonic() + delay
                 self.last_error = f"{type(exc).__name__}: {exc}"
                 logger.warning("Market-cap refresh failed (%s); preserving safety UNKNOWN fallback", type(exc).__name__)
                 return False
+            finally:
+                self._persist_cache()
 
     def classify_symbol(self, base_symbol: str, now: datetime | None = None) -> MarketCapRecord:
         """Classify a base symbol synchronously from cached market-cap records."""
@@ -243,14 +316,22 @@ class MarketCapProvider:
         return self.classify_symbol(base_symbol)
 
     def status_summary(self) -> dict[str, Any]:
+        extra_bands = {}
+        if hasattr(self.config, 'mega_cap_min_usd'):
+            extra_bands = {'micro': [self.config.micro_cap_min_usd, self.config.low_cap_min_usd],
+                           'large': [self.config.mid_cap_max_usd, self.config.mega_cap_min_usd],
+                           'mega': [self.config.mega_cap_min_usd, None]}
         return {
             "provider": self.config.market_cap_provider,
             "cached_symbols": len(self._cache),
             "cache_valid": self._is_cache_valid(),
             "cache_fetched_at": self._cache_fetched_at.isoformat() if self._cache_fetched_at else None,
             "requests_made": self.requests_made,
+            "retry_after_sec": round(max(0, self._retry_after_monotonic-time.monotonic()), 1),
+            "cache_restored": self.cache_restored,
             "last_error": self.last_error,
             "bands_usd": {
+                **extra_bands,
                 "low": [self.config.low_cap_min_usd, self.config.low_cap_max_usd],
                 "mid": [self.config.mid_cap_min_usd, self.config.mid_cap_max_usd],
             },

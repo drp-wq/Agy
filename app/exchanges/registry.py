@@ -28,6 +28,14 @@ class ExchangeRegistry:
         }
         return cls(adapters=adapters)
 
+    @classmethod
+    def violet_public(cls):
+        """Independent Lab-only registry; never inherits private credentials."""
+        from app.exchanges.gateio import GateIOAdapter
+        return cls({ExchangeId.OKX: OKXAdapter(), ExchangeId.BYBIT: BybitAdapter(),
+                    ExchangeId.BINANCE: BinanceAdapter(timestamped_spot_books=True),
+                    ExchangeId.GATEIO: GateIOAdapter()})
+
     def get(self, exchange_id: ExchangeId | str) -> BaseExchangeAdapter:
         key = ExchangeId(exchange_id) if isinstance(exchange_id, str) else exchange_id
         if key not in self._adapters:

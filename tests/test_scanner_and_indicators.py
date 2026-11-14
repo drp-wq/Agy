@@ -43,6 +43,21 @@ def test_compute_indicators_and_regime():
 
 
 class _ScannerMockClient:
+    def load_markets(self, reload=False):
+        return {}
+
+    def market(self, symbol):
+        return {'symbol': symbol, 'id': symbol.split(':')[0].replace('/', '')}
+
+    def publicGetV5MarketTickers(self, request):
+        return {'retCode': 0, 'time': 1700000000000, 'result': {'category': request['category'], 'list': [{'symbol': request['symbol']}]}}
+
+    def parse_ticker(self, row, market):
+        return self.fetch_ticker(market['symbol'])
+
+    def iso8601(self, timestamp):
+        return None
+
     def fetch_ticker(self, _sym):
         return {"last": 51600.0, "quoteVolume": 200_000_000.0}
 

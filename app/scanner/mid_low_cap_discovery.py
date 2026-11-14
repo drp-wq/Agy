@@ -99,7 +99,9 @@ class DynamicSpotMarketDiscoverer:
     ) -> None:
         self.cap_provider = cap_provider
         self.config = config or MidLowCapConfig()
+        self.target_bands = (MarketCapBand.LOW, MarketCapBand.MID)
         self._cache: dict[str, tuple[float, list[DiscoveredSpotMarket]]] = {}
+        self._research_extra: dict[str, list[dict[str, Any]]] = {}
         self._batch_cursor: dict[str, int] = {}
 
     async def discover_for_exchange(
@@ -119,6 +121,7 @@ class DynamicSpotMarketDiscoverer:
         markets = await adapter.load_markets(reload=False)
 
         discovered: list[DiscoveredSpotMarket] = []
+        research_extra: list[dict[str, Any]] = []
         seen_symbols: set[str] = set()
 
         for sym, meta in (markets or {}).items():
@@ -145,7 +148,18 @@ class DynamicSpotMarketDiscoverer:
                 continue
 
             cap_rec = self.cap_provider.classify_symbol(base)
-            if not cap_rec.band.is_target_mid_low or not cap_rec.is_fresh:
+            if cap_rec.band not in self.target_bands or not cap_rec.is_fresh:
+                if len(research_extra) < 50:
+                    research_extra.append(
+                        {
+                            "symbol": clean_sym,
+                            "exchange": ex_key,
+                            "market_cap_usd": cap_rec.market_cap_usd,
+                            "trade_eligible": False,
+                            "research_only": True,
+                            "reason": cap_rec.reason or "unverified_or_outside_sleeve_bands",
+                        }
+                    )
                 continue
 
             seen_symbols.add(clean_sym)
@@ -166,7 +180,12 @@ class DynamicSpotMarketDiscoverer:
             key=lambda m: (m.cap_record.market_cap_usd or 0.0, m.symbol),
             reverse=True,
         )
+        if len(self.target_bands) > 2:
+            groups = [[m for m in discovered if m.cap_record.band == band] for band in self.target_bands]
+            discovered = [group[i] for i in range(max(map(len, groups), default=0))
+                          for group in groups if i < len(group)]
         capped = discovered[: self.config.max_discovered_symbols_per_exchange]
+        self._research_extra[ex_key] = research_extra
         self._cache[ex_key] = (now_mono, capped)
         return capped
 
@@ -187,6 +206,13 @@ class DynamicSpotMarketDiscoverer:
                     adapter.exchange_id.value,
                     type(exc).__name__,
                 )
+
+        if len(self.target_bands) > 2:
+            groups = [sorted((m for m in all_markets if m.cap_record.band == band),
+                             key=lambda m: (m.cap_record.market_cap_usd or 0, m.exchange.value, m.symbol),
+                             reverse=True) for band in self.target_bands]
+            return [group[i] for i in range(max(map(len, groups), default=0))
+                    for group in groups if i < len(group)]
 
         # Global ordering: interleave LOW and MID cap markets across exchanges
         low_caps = [m for m in all_markets if m.cap_record.band == MarketCapBand.LOW]

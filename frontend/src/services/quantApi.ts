@@ -99,7 +99,7 @@ export interface PaperDiagnostics {
   exchanges: Record<string, { orders_by_status: Record<string, number>; rejections_by_reason: Record<string, number>;
     fills: number; fees_usd: number; realized_pnl_usd: number; unrealized_pnl_usd: number;
     account_freshness: Freshness; order_freshness: Freshness; fill_freshness: Freshness }>;
-  system: { cycle: Freshness; observation: Freshness };
+  system: { cycle: Freshness; observation: Freshness & { window_complete?: boolean; ledger_status?: 'ok' | 'error' | 'unknown' } };
   screening: { cached_market_snapshots: number; active_signals: number; note: string };
   risk: { emergency_stop_active: boolean; live_execution_disabled: boolean };
 }
@@ -193,10 +193,12 @@ class NeonQuantApiClient {
 
   public async getState(
     initData?: string,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    forceRefresh = false
   ): Promise<{ data: MiniAppStateResponse; isDemo: boolean }> {
     try {
-      const res = await fetch(`${this.baseUrl}/api/miniapp/state`, {
+      const qs = forceRefresh ? '?refresh=1' : '';
+      const res = await fetch(`${this.baseUrl}/api/miniapp/state${qs}`, {
         method: 'GET',
         headers: this.getHeaders(initData),
         credentials: 'same-origin',

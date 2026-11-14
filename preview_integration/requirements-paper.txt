@@ -1,0 +1,3 @@
+# Direct dependency used by the credential-free public stream adapters.
+# Already installed in the deployed preview virtual environment; no upgrade needed.
+websockets==17.4

@@ -79,14 +79,31 @@ export const ExchangeWorkspaceView: React.FC<ExchangeWorkspaceViewProps> = ({
       )}
 
       {/* Isolated authenticated account cache: quantities are not USD valuations. */}
-      <div className="nq-panel rounded-xl p-4 space-y-3 border border-white/[0.08]">
+      <div className="nq-panel rounded-xl p-4 space-y-3 border border-[#ff3555]/25">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h3 className="text-sm font-semibold text-white">Live Account · Read-Only Snapshot</h3>
-          <span className="text-xs text-slate-400 font-mono">
-            {ex.live_readonly_snapshot?.status === 'ok' && ex.live_readonly_snapshot.timestamp
-              ? `Last synced ${formatAgeSeconds(ex.live_readonly_snapshot.timestamp)}`
-              : ex.live_readonly_snapshot?.status === 'error' ? 'Sync failed' : 'Unavailable'}
-          </span>
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="text-sm font-semibold text-[#ffe3e5]">Live Account · Read-Only Snapshot</h3>
+            {ex.exchange_meta?.account_status && (
+              <span className="px-2 py-0.5 rounded bg-[#080305] border border-[#ff3555]/30 text-[10px] font-mono text-[#ff6375]">
+                {String(ex.exchange_meta.account_status)}
+              </span>
+            )}
+          </div>
+          <div className="flex flex-wrap items-center gap-3 text-xs text-[#c28e95] font-mono">
+            {ex.api_latency_ms !== null && ex.api_latency_ms !== undefined && (
+              <span>Latency: {Number(ex.api_latency_ms).toFixed(0)} ms</span>
+            )}
+            {ex.exchange_meta?.freshness && (
+              <span className={ex.exchange_meta.freshness === 'fresh' ? 'text-[#10B981]' : 'text-amber-400'}>
+                Freshness: {String(ex.exchange_meta.freshness)}
+              </span>
+            )}
+            <span>
+              {ex.live_readonly_snapshot?.status === 'ok' && ex.live_readonly_snapshot.timestamp
+                ? `Last synced ${formatAgeSeconds(ex.live_readonly_snapshot.timestamp)}`
+                : ex.live_readonly_snapshot?.status === 'error' ? 'Sync failed' : 'Unavailable'}
+            </span>
+          </div>
         </div>
         {ex.live_readonly_snapshot?.status === 'ok' ? (
           <>

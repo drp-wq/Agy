@@ -65,9 +65,65 @@ def install_violet_status(
         state = runner.status() if hasattr(runner, 'status') else runner.state
         return {'mode':'READ_ONLY_PAPER','live_execution_enabled':False,
                 'violet': {'campaign':state.get('campaign'), 'worker_health':state.get('worker_health'),
-                           'cycles':state.get('cycles'), 'source':'isolated_violet_paper_ledger'},
+                           'cycles':state.get('cycles'), 'source':'isolated_violet_paper_ledger',
+                           'campaign_id': state.get('campaign_id'),
+                           'budget': state.get('budget'),
+                           'sleeves': state.get('sleeves'),
+                           'risk_budget': state.get('risk_budget'),
+                           'entry_gate': state.get('entry_gate'),
+                           'historical_archive': state.get('historical_archive'),
+                           'market_cap_tiers': state.get('market_cap_tiers'),
+                           'research_cap_categories': state.get('research_cap_categories'),
+                           'heartbeat_age_sec': state.get('heartbeat_age_sec'),
+                           'rejections': (state.get('rejections') or [])[:20],
+                           'risk': state.get('risk'),
+                           'daily_circuit_breakers': state.get('daily_circuit_breakers'),
+                           'reconciliation': state.get('reconciliation'),
+                           'legacy_preview': state.get('legacy_preview')},
                 'solana': await run_in_threadpool(solana_summary),
                 'accounting':'SEPARATE_PAPER_LEDGERS_NO_TRANSFERS'}
+
+    @app.get('/api/violet/pnl', dependencies=[auth_dep])
+    async def violet_pnl_report(
+        asset: str | None = None,
+        exchange: str | None = None,
+        strategy: str | None = None,
+        cap_band: str | None = None,
+        status: str | None = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
+    ):
+        if hasattr(runner, 'pnl_report'):
+            return await run_in_threadpool(
+                lambda: runner.pnl_report(
+                    asset_filter=asset,
+                    exchange_filter=exchange,
+                    strategy_filter=strategy,
+                    cap_band_filter=cap_band,
+                    status_filter=status,
+                    start_date=start_date,
+                    end_date=end_date,
+                )
+            )
+        return {'mode': 'PAPER_ONLY', 'live_accounts_excluded': True, 'overview': {}, 'assets': [], 'charts': {}, 'ledger': []}
+
+    @app.get('/api/violet/ledger', dependencies=[auth_dep])
+    async def violet_ledger(limit: int = 200):
+        events = await run_in_threadpool(runner.db.list_ledger_events, min(max(1, limit), 1000)) if hasattr(runner, 'db') else []
+        rep = runner.pnl_report() if hasattr(runner, 'pnl_report') else {}
+        return {
+            'mode': 'PAPER_ONLY',
+            'live_accounts_excluded': True,
+            'events': events,
+            'reconciliation': rep.get('reconciliation', {'balanced': True, 'drift_usd': 0.0}),
+        }
+
+    @app.get('/api/violet/arbitrage', dependencies=[auth_dep])
+    async def violet_arbitrage_research(symbol: str = 'BTC/USDT'):
+        from app.dashboard.arbitrage_research import scan_public_books
+        if symbol not in ('BTC/USDT', 'ETH/USDT', 'SOL/USDT'):
+            raise HTTPException(status_code=422, detail='Unsupported research symbol')
+        return await scan_public_books(symbol)
 
     @app.get('/api/violet/unified-account', dependencies=[auth_dep])
     async def unified_account_status():

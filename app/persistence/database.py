@@ -282,6 +282,29 @@ MIGRATIONS: list[tuple[int, str]] = [
             updated_at TEXT NOT NULL
         );
     """),
+    (5, """
+        CREATE TABLE IF NOT EXISTS paper_ledger_events (
+            seq INTEGER PRIMARY KEY AUTOINCREMENT,
+            event_id TEXT UNIQUE NOT NULL,
+            timestamp_utc TEXT NOT NULL,
+            event_type TEXT NOT NULL,
+            bot_id TEXT NOT NULL DEFAULT '',
+            exchange TEXT NOT NULL DEFAULT '',
+            symbol TEXT NOT NULL DEFAULT '',
+            market_cap_band TEXT NOT NULL DEFAULT 'unknown',
+            strategy TEXT NOT NULL DEFAULT '',
+            order_id TEXT NOT NULL DEFAULT '',
+            fill_id TEXT NOT NULL DEFAULT '',
+            amount_usd TEXT NOT NULL DEFAULT '0',
+            fee_usd TEXT NOT NULL DEFAULT '0',
+            funding_usd TEXT NOT NULL DEFAULT '0',
+            realized_pnl_usd TEXT NOT NULL DEFAULT '0',
+            details_json TEXT NOT NULL DEFAULT '{}',
+            idempotency_key TEXT UNIQUE
+        );
+        CREATE INDEX IF NOT EXISTS idx_paper_ledger_events_ts ON paper_ledger_events(timestamp_utc);
+        CREATE INDEX IF NOT EXISTS idx_paper_ledger_events_sym ON paper_ledger_events(symbol);
+    """),
 ]
 
 
@@ -693,6 +716,75 @@ class PaperDatabase:
             else:
                 rows = self._conn.execute(sql).fetchall()
             return [dict(r) for r in rows]
+
+    def append_ledger_event(
+        self,
+        *,
+        event_id: str,
+        timestamp_utc: str,
+        event_type: str,
+        bot_id: str = "",
+        exchange: str = "",
+        symbol: str = "",
+        market_cap_band: str = "unknown",
+        strategy: str = "",
+        order_id: str = "",
+        fill_id: str = "",
+        amount_usd: str = "0",
+        fee_usd: str = "0",
+        funding_usd: str = "0",
+        realized_pnl_usd: str = "0",
+        details: dict[str, Any] | None = None,
+        idempotency_key: str | None = None,
+    ) -> bool:
+        """Append an immutable paper ledger event; returns True if inserted, False on duplicate idempotency_key."""
+        payload = json.dumps(details or {}, sort_keys=True)
+        with self.transaction() as conn:
+            cur = conn.execute(
+                """
+                INSERT OR IGNORE INTO paper_ledger_events (
+                    event_id, timestamp_utc, event_type, bot_id, exchange, symbol,
+                    market_cap_band, strategy, order_id, fill_id,
+                    amount_usd, fee_usd, funding_usd, realized_pnl_usd,
+                    details_json, idempotency_key
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    event_id,
+                    timestamp_utc,
+                    event_type,
+                    bot_id,
+                    exchange,
+                    symbol,
+                    market_cap_band,
+                    strategy,
+                    order_id,
+                    fill_id,
+                    str(amount_usd),
+                    str(fee_usd),
+                    str(funding_usd),
+                    str(realized_pnl_usd),
+                    payload,
+                    idempotency_key,
+                ),
+            )
+            return cur.rowcount > 0
+
+    def list_ledger_events(self, limit: int = 500) -> list[dict[str, Any]]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM paper_ledger_events ORDER BY seq DESC LIMIT ?",
+                (int(limit),),
+            ).fetchall()
+            out: list[dict[str, Any]] = []
+            for r in rows:
+                item = dict(r)
+                try:
+                    item["details"] = json.loads(item.pop("details_json", "{}") or "{}")
+                except Exception:
+                    item["details"] = {}
+                out.append(item)
+            return out
 
     def list_all_fills_asc(self) -> list[PaperFill]:
         with self._lock:

@@ -2,8 +2,10 @@ import { DiagnosticsPanel } from './components/workspaces/DiagnosticsPanel';
 import React, { useState, useEffect, useCallback, useRef, Suspense, lazy } from 'react';
 import {
   LayoutDashboard,
+  BrainCircuit,
   Cpu,
   Radar,
+  ArrowLeftRight,
   Target,
   Layers,
   Briefcase,
@@ -16,7 +18,8 @@ import {
   RefreshCw,
   Menu,
   X,
-  ChevronRight
+  ChevronRight,
+  TrendingUp
 } from 'lucide-react';
 import {
   FuturesPosition,
@@ -38,9 +41,13 @@ import {
 const GlobalOverviewView = lazy(() =>
   import('./components/workspaces/GlobalOverviewView').then((m) => ({ default: m.GlobalOverviewView }))
 );
+const UnifiedBrainAccountView = lazy(() =>
+  import('./components/workspaces/UnifiedBrainAccountView').then((m) => ({ default: m.UnifiedBrainAccountView }))
+);
 const SolanaResearchView = lazy(() =>
   import('./components/workspaces/SolanaResearchView').then((m) => ({ default: m.SolanaResearchView }))
 );
+const ArbitrageResearchView = lazy(() => import('./components/workspaces/ArbitrageResearchView').then((m) => ({ default: m.ArbitrageResearchView })));
 const MarketScannerView = lazy(() =>
   import('./components/workspaces/MarketScannerView').then((m) => ({ default: m.MarketScannerView }))
 );
@@ -77,6 +84,15 @@ const PositionDetailDrawer = lazy(() =>
 const ProMarketChart = lazy(() =>
   import('./components/charts/ProMarketChart').then((m) => ({ default: m.ProMarketChart }))
 );
+const PnlCommandCenterView = lazy(() =>
+  import('./components/workspaces/PnlCommandCenterView').then((m) => ({ default: m.PnlCommandCenterView }))
+);
+const AssetLedgerView = lazy(() =>
+  import('./components/workspaces/AssetLedgerView').then((m) => ({ default: m.AssetLedgerView }))
+);
+const StrategyAnalyticsView = lazy(() =>
+  import('./components/workspaces/StrategyAnalyticsView').then((m) => ({ default: m.StrategyAnalyticsView }))
+);
 
 interface NavItem {
   id: NavSectionId;
@@ -88,7 +104,9 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   { id: 'overview', label: 'Global Overview', shortLabel: 'Overview', group: 'Core Terminal', icon: LayoutDashboard },
+  { id: 'brain', label: 'Unified AI Brain & Account', shortLabel: 'AI Brain', group: 'Core Terminal', icon: BrainCircuit },
   { id: 'solana', label: 'Solana Research', shortLabel: 'Solana', group: 'Core Terminal', icon: Cpu },
+  { id: 'arbitrage', label: 'Cross-Exchange Arbitrage Lab', shortLabel: 'Arbitrage', group: 'Core Terminal', icon: ArrowLeftRight },
   { id: 'scanner', label: 'Market Scanner', shortLabel: 'Scanner', group: 'Core Terminal', icon: Radar },
   { id: 'opportunities', label: 'Trading Opportunities', shortLabel: 'Opportunities', group: 'Core Terminal', icon: Target },
   { id: 'binance', label: 'Binance Workspace', shortLabel: 'Binance', group: 'Exchange Workspaces', icon: Layers },
@@ -97,6 +115,9 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'positions', label: 'Positions', shortLabel: 'Positions', group: 'Execution & Risk', icon: Briefcase },
   { id: 'orders', label: 'Paper Orders', shortLabel: 'Orders', group: 'Execution & Risk', icon: ClipboardList },
   { id: 'analytics', label: 'Portfolio Analytics', shortLabel: 'Analytics', group: 'Execution & Risk', icon: PieChart },
+  { id: 'pnl', label: 'PnL Command Center', shortLabel: 'PnL Center', group: 'Execution & Risk', icon: TrendingUp },
+  { id: 'ledger', label: 'Asset Ledger', shortLabel: 'Ledger', group: 'Execution & Risk', icon: ClipboardList },
+  { id: 'strategies', label: 'Strategy Analytics', shortLabel: 'Strategies', group: 'Execution & Risk', icon: BrainCircuit },
   { id: 'risk', label: 'Risk Management', shortLabel: 'Risk', group: 'Execution & Risk', icon: ShieldAlert },
   { id: 'treasury', label: '18-Agent Treasury & Audit', shortLabel: 'Treasury', group: 'Execution & Risk', icon: Landmark },
   { id: 'alerts', label: 'Telegram Alerts', shortLabel: 'Alerts', group: 'Operations', icon: Bell },
@@ -137,7 +158,7 @@ export default function App() {
   const abortRef = useRef<AbortController | null>(null);
 
   const fetchAll = useCallback(
-    async (isBackground = false) => {
+    async (isBackground = false, forceRefresh = false) => {
       abortRef.current?.abort();
       const controller = new AbortController();
       abortRef.current = controller;
@@ -148,7 +169,7 @@ export default function App() {
 
       try {
         const [stateRes, healthRes] = await Promise.all([
-          quantApi.getState(telegram.initData, controller.signal),
+          quantApi.getState(telegram.initData, controller.signal, forceRefresh),
           quantApi.getHealth(telegram.initData, controller.signal)
         ]);
         if (!controller.signal.aborted) {
@@ -238,6 +259,13 @@ export default function App() {
   };
 
   const activeNavMeta = NAV_ITEMS.find((n) => n.id === activeSection) || NAV_ITEMS[0];
+  const isIndependentSection =
+    activeSection === 'solana' ||
+    activeSection === 'arbitrage' ||
+    activeSection === 'brain' ||
+    activeSection === 'pnl' ||
+    activeSection === 'ledger' ||
+    activeSection === 'strategies';
   const dataAgeSec = state ? Math.max(0, Math.floor(Date.now() / 1000) - state.generated_at) : 0;
 
   return (
@@ -332,7 +360,7 @@ export default function App() {
           <div className="flex items-center gap-2 shrink-0">
             <button
               type="button"
-              onClick={() => fetchAll(false)}
+              onClick={() => fetchAll(false, true)}
               disabled={refreshing}
               className="px-3.5 py-2 min-h-[38px] rounded-lg bg-[#ff3555]/15 hover:bg-[#ff3555]/25 border border-[#ff3555]/45 text-[#ffe3e5] text-xs font-medium flex items-center gap-1.5 whitespace-nowrap shrink-0 transition-colors"
             >
@@ -373,7 +401,7 @@ export default function App() {
         {/* MAIN CONTENT AREA */}
         <main className="flex-1 px-4 lg:px-8 py-6 pb-24 md:pb-10 max-w-[1440px] w-full mx-auto space-y-6">
           {/* Stale / Demo Warning Banner */}
-          {state && !authError && activeSection !== 'solana' && (
+          {state && !authError && !isIndependentSection && (
             <StaleWarningStrip
               ageSec={dataAgeSec}
               isDemo={isDemo}
@@ -382,18 +410,18 @@ export default function App() {
           )}
 
           {/* Auth Error State */}
-          {authError && activeSection !== 'solana' && (
+          {authError && !isIndependentSection && (
             <AuthErrorBanner message={authError} onRetry={() => fetchAll(false)} />
           )}
 
           {/* Generic Network Error State */}
-          {fetchError && !authError && !state && activeSection !== 'solana' && (
+          {fetchError && !authError && !state && !isIndependentSection && (
             <div className="nq-panel rounded-xl p-6 border border-[#ef4444]/45 text-xs space-y-3">
               <div className="text-sm font-semibold text-[#ff6375]">Backend Telemetry Unreachable</div>
               <p className="text-[#f3c6cc]">{fetchError}</p>
               <button
                 type="button"
-                onClick={() => fetchAll(false)}
+                onClick={() => fetchAll(false, true)}
                 className="px-4 py-2 rounded-lg bg-[#ff3555]/20 border border-[#ff3555]/45 text-[#ffe3e5] font-medium"
               >
                 Retry Connection
@@ -401,17 +429,25 @@ export default function App() {
             </div>
           )}
 
-          {fetchError && !authError && state && activeSection !== 'solana' && (
+          {fetchError && !authError && state && !isIndependentSection && (
             <div className="mb-4 px-4 py-2.5 rounded-xl bg-[#ffb16c]/10 border border-[#ffb16c]/35 text-xs text-[#ffd7b3] flex items-center justify-between gap-3">
               <span>Telemetry refresh warning: {fetchError}. Showing last synchronized snapshot.</span>
               <button
                 type="button"
-                onClick={() => fetchAll(false)}
+                onClick={() => fetchAll(false, true)}
                 className="px-2.5 py-1 rounded bg-[#ffb16c]/20 hover:bg-[#ffb16c]/30 text-[#ffe3e5] whitespace-nowrap shrink-0"
               >
                 Retry
               </button>
             </div>
+          )}
+
+          {/* Independent Unified AI Brain & Account Workspace */}
+          {activeSection === 'brain' && (
+            <Suspense fallback={<LoadingTerminalSkeleton />}>
+              <UnifiedBrainAccountView initData={telegram.initData} />
+              <ReadOnlySecurityFooterNotice />
+            </Suspense>
           )}
 
           {/* Independent Solana Research Workspace */}
@@ -422,11 +458,39 @@ export default function App() {
             </Suspense>
           )}
 
+          {activeSection === 'arbitrage' && (
+            <Suspense fallback={<LoadingTerminalSkeleton />}>
+              <ArbitrageResearchView initData={telegram.initData} />
+              <ReadOnlySecurityFooterNotice />
+            </Suspense>
+          )}
+
+          {activeSection === 'pnl' && (
+            <Suspense fallback={<LoadingTerminalSkeleton />}>
+              <PnlCommandCenterView initData={telegram.initData} />
+              <ReadOnlySecurityFooterNotice />
+            </Suspense>
+          )}
+
+          {activeSection === 'ledger' && (
+            <Suspense fallback={<LoadingTerminalSkeleton />}>
+              <AssetLedgerView initData={telegram.initData} />
+              <ReadOnlySecurityFooterNotice />
+            </Suspense>
+          )}
+
+          {activeSection === 'strategies' && (
+            <Suspense fallback={<LoadingTerminalSkeleton />}>
+              <StrategyAnalyticsView initData={telegram.initData} />
+              <ReadOnlySecurityFooterNotice />
+            </Suspense>
+          )}
+
           {/* Loading Skeleton */}
-          {activeSection !== 'solana' && loading && !state && <LoadingTerminalSkeleton />}
+          {!isIndependentSection && loading && !state && <LoadingTerminalSkeleton />}
 
           {/* Active Crypto Workspace Render */}
-          {activeSection !== 'solana' && state && !authError && (
+          {!isIndependentSection && state && !authError && (
             <>
               {['system', 'orders', 'analytics', 'scanner', 'opportunities', 'risk'].includes(activeSection) && (
                 <DiagnosticsPanel section={activeSection} initData={telegram.initData} />
@@ -506,9 +570,9 @@ export default function App() {
         <div className="grid grid-cols-5 h-14 items-center">
           {[
             { id: 'overview' as NavSectionId, label: 'Overview', icon: LayoutDashboard },
-            { id: 'solana' as NavSectionId, label: 'Solana', icon: Cpu },
-            { id: 'scanner' as NavSectionId, label: 'Scanner', icon: Radar },
-            { id: 'positions' as NavSectionId, label: 'Positions', icon: Briefcase }
+            { id: 'brain' as NavSectionId, label: 'AI Brain', icon: BrainCircuit },
+            { id: 'arbitrage' as NavSectionId, label: 'Arbitrage', icon: ArrowLeftRight },
+            { id: 'solana' as NavSectionId, label: 'Solana', icon: Cpu }
           ].map((tab) => {
             const Icon = tab.icon;
             const isActive = activeSection === tab.id;

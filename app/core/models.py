@@ -18,6 +18,7 @@ class ExchangeId(str, Enum):
     OKX = "okx"
     BYBIT = "bybit"
     BINANCE = "binance"
+    GATEIO = "gateio"
 
 
 class MarketType(str, Enum):
@@ -88,6 +89,7 @@ class OrderBookSnapshot(BaseModel):
     exchange: ExchangeId
     symbol: str
     market_type: MarketType
+    source_timestamp_ms: float | None = None
     timestamp: datetime
     best_bid: float
     best_ask: float
@@ -111,6 +113,8 @@ class MarketSnapshot(BaseModel):
     exchange: ExchangeId
     symbol: str
     market_type: MarketType
+    ticker_source_timestamp_ms: float | None = None
+    book_source_timestamp_ms: float | None = None
     timestamp: datetime
     last_price: float
     bid: float

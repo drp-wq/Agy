@@ -126,3 +126,22 @@ describe('quantApi security, incremental candles, cancellation, and error handli
     expect(stateRes.data.risk.total_live_readonly_equity_usd).toBeNull();
   });
 });
+
+describe('paper diagnostics API', () => {
+  afterEach(() => vi.restoreAllMocks());
+  it('uses authenticated read-only GET with no caching', async () => {
+    const data = { mode: 'PAPER_ONLY', read_only: true, exchanges: {}, system: {}, screening: {}, risk: {} };
+    const request = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => data });
+    vi.stubGlobal('fetch', request);
+    expect(await quantApi.getDiagnostics('signed-owner-data')).toEqual(data);
+    expect(request).toHaveBeenCalledWith('/api/miniapp/diagnostics', expect.objectContaining({
+      credentials: 'include', cache: 'no-store', headers: expect.objectContaining({ 'X-Telegram-Init-Data': 'signed-owner-data' })
+    }));
+  });
+  it('fails closed on auth errors and non-paper responses', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 401 }));
+    await expect(quantApi.getDiagnostics()).rejects.toBeInstanceOf(TelegramAuthError);
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ mode: 'LIVE' }) }));
+    await expect(quantApi.getDiagnostics()).rejects.toBeInstanceOf(ApiFetchError);
+  });
+});

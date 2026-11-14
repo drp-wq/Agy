@@ -331,7 +331,10 @@ def create_dashboard_app(
         return templates.TemplateResponse(request, "miniapp.html", {})
 
     @app.get("/api/miniapp/state")
-    async def miniapp_state(_user: str = Depends(require_miniapp_auth)) -> dict[str, Any]:
+    async def miniapp_state(
+        refresh: bool = False,
+        _user: str = Depends(require_miniapp_auth),
+    ) -> dict[str, Any]:
         readiness_path = BASE_DIR / "data" / "readiness_watch.json"
         readiness: dict[str, Any] | None = None
         if readiness_path.exists():
@@ -339,7 +342,80 @@ def create_dashboard_app(
                 readiness = json.loads(readiness_path.read_text(encoding="utf-8"))
             except Exception:
                 readiness = None
-        return build_miniapp_state_payload(service, _user, readiness=readiness)
+        payload = build_miniapp_state_payload(service, _user, readiness=readiness)
+        ro_telemetry = getattr(app.state, "readonly_telemetry", None)
+        if ro_telemetry is not None:
+            ro_snap = await ro_telemetry.refresh(force=True) if refresh else ro_telemetry.snapshot()
+            exchanges_map = payload.get("exchanges") or {}
+            for ex_id, ro in ro_snap.items():
+                if ex_id not in exchanges_map:
+                    continue
+                ex_entry = exchanges_map[ex_id]
+                ex_entry["public_feed_ok"] = bool(ro.get("public_feed_ok", ex_entry.get("public_feed_ok", True)))
+                ex_entry["private_auth_ok"] = bool(ro.get("private_auth_ok", False))
+                ex_entry["private_auth_error"] = ro.get("private_auth_error")
+                if ro.get("last_sync_ts") is not None:
+                    ex_entry["last_sync_ts"] = ro["last_sync_ts"]
+                if ro.get("latency_ms") is not None:
+                    ex_entry["api_latency_ms"] = ro["latency_ms"]
+                if ro.get("live_readonly_snapshot") is not None:
+                    ex_entry["live_readonly_snapshot"] = ro["live_readonly_snapshot"]
+                meta = ex_entry.get("exchange_meta")
+                if isinstance(meta, dict):
+                    meta["auth_state"] = ro.get("auth_state")
+                    meta["account_status"] = ro.get("account_status")
+                    meta["freshness"] = ro.get("freshness")
+                    meta["age_seconds"] = ro.get("age_seconds")
+                    meta["api_permissions"] = ro.get("api_permissions")
+        runner = getattr(app.state, "all_cap_runner", None)
+        if runner is not None:
+            st = runner.status()
+            payload["cycle_count"] = int(st.get("cycles") or 0)
+            payload["last_cycle_at"] = st.get("completed_at") or st.get("started_at")
+            payload["market_cap_tiers"] = st.get("market_cap_tiers")
+            if not payload.get("opportunities") and st.get("discovered_markets"):
+                payload["opportunities"] = [
+                    {
+                        "symbol": m["symbol"],
+                        "exchange": m["exchange"],
+                        "market_type": "spot",
+                        "direction": "long",
+                        "score": 75.0,
+                        "confidence": 0.75,
+                        "strategy": f"all_cap_{m['band']}_spot",
+                        "last_price": m.get("last_price"),
+                        "volume_24h_usd": m.get("volume_24h_usd"),
+                        "market_cap_usd": m.get("market_cap_usd"),
+                        "cap_band": m.get("band"),
+                    }
+                    for m in st["discovered_markets"]
+                ]
+            if not payload.get("spot_holdings"):
+                payload["spot_holdings"] = [
+                    {
+                        "id": p.position_id,
+                        "exchange": p.exchange.value,
+                        "symbol": p.symbol,
+                        "side": p.direction.value,
+                        "qty": p.qty,
+                        "entry_price": p.entry_price,
+                        "mark_price": p.mark_price,
+                        "notional_usd": round(p.qty * p.mark_price, 2),
+                        "unrealized_pnl_usd": round(p.unrealized_pnl_usd, 4),
+                        "strategy": p.strategy_name,
+                        "bot_id": p.bot_id,
+                    }
+                    for p in runner.db.list_positions()
+                ]
+            if not payload.get("open_orders"):
+                payload["open_orders"] = [
+                    o.model_dump(mode="json") for o in runner.db.list_orders(limit=50)
+                ]
+            if not payload.get("recent_fills"):
+                payload["recent_fills"] = [
+                    f.model_dump(mode="json") for f in runner.db.list_fills(limit=50)
+                ]
+        return payload
 
     @app.get("/api/miniapp/candles/{exchange}/{market_type}/{base}/{quote}/{timeframe}")
     async def miniapp_candles(

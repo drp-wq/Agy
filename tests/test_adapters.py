@@ -47,6 +47,19 @@ class _MockCCXT:
             raise ccxt.NetworkError("simulated network blip")
         return {"symbol": symbol, "last": 65000.0, "quoteVolume": 150_000_000.0}
 
+    def market(self, symbol):
+        return {'id': symbol.replace('/', ''), 'symbol': symbol}
+
+    def publicGetV5MarketTickers(self, request):
+        return {'retCode': 0, 'result': {'category': request['category'],
+                'list': [{'symbol': request['symbol']}]}, 'time': 1700000000000}
+
+    def parse_ticker(self, row, market):
+        return self.fetch_ticker(market['symbol'])
+
+    def iso8601(self, timestamp):
+        return None
+
     def fetch_order_book(self, _symbol, limit=20):
         return {
             "bids": [[64990.0, 2.0], [64980.0, 3.0]],

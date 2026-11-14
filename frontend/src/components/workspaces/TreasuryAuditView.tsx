@@ -14,8 +14,9 @@ import { ExchangeId, MiniAppStateResponse } from '../../types/quant';
 import { EmptyStatePanel, EXCHANGE_META, SectionHeader } from '../common/TerminalPrimitives';
 import {
   fetchUnifiedAccount,
-  simulateClosedLoopTransfer,
-  UnifiedAccountPayload
+  fetchUnifiedBrainStatus,
+  UnifiedAccountPayload,
+  UnifiedBrainStatusPayload
 } from '../../services/violetResearchApi';
 
 interface Props {
@@ -44,52 +45,28 @@ export const TreasuryAuditView: React.FC<Props> = ({ state, initData }) => {
   const [exchangeFilter, setExchangeFilter] = useState<'all' | ExchangeId>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'idle'>('all');
   const [unifiedAccount, setUnifiedAccount] = useState<UnifiedAccountPayload | null>(null);
+  const [brainStatus, setBrainStatus] = useState<UnifiedBrainStatusPayload | null>(null);
   const [unifiedError, setUnifiedError] = useState<string | null>(null);
-  const [simulating, setSimulating] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
-    fetchUnifiedAccount(initData, controller.signal)
-      .then((payload) => {
-        setUnifiedAccount(payload);
+    Promise.allSettled([
+      fetchUnifiedAccount(initData, controller.signal),
+      fetchUnifiedBrainStatus(initData, controller.signal)
+    ]).then(([acctRes, brainRes]) => {
+      if (controller.signal.aborted) return;
+      if (acctRes.status === 'fulfilled') {
+        setUnifiedAccount(acctRes.value);
         setUnifiedError(null);
-      })
-      .catch((err) => {
-        if ((err as Error).name !== 'AbortError') {
-          setUnifiedError((err as Error).message);
-        }
-      });
+      } else {
+        setUnifiedError(acctRes.reason instanceof Error ? acctRes.reason.message : 'Unified account unavailable');
+      }
+      if (brainRes.status === 'fulfilled') {
+        setBrainStatus(brainRes.value);
+      }
+    });
     return () => controller.abort();
   }, [initData]);
-
-  const handleSimulateTransfer = async (destinationVenue: string) => {
-    setSimulating(true);
-    setUnifiedError(null);
-    try {
-      const res = await simulateClosedLoopTransfer(
-        {
-          source_venue: 'hub_binance_master',
-          destination_venue: destinationVenue,
-          amount_usd: '250.00',
-          idempotency_key: `ui_${destinationVenue}_${Date.now()}`,
-          reason: 'scarlet_terminal_paper_rebalance'
-        },
-        initData
-      );
-      setUnifiedAccount(res.summary);
-    } catch (err) {
-      const msg = (err as Error).message || '';
-      if (msg.includes('(405)')) {
-        setUnifiedError(
-          'Preview server is in strict read-only mode (HTTP mutations disabled). Closed-loop simulation is verified in backend tests.'
-        );
-      } else {
-        setUnifiedError(msg);
-      }
-    } finally {
-      setSimulating(false);
-    }
-  };
 
   const treasury = state.unified_treasury;
   const recon = state.treasury_reconciliation;
@@ -112,30 +89,50 @@ export const TreasuryAuditView: React.FC<Props> = ({ state, initData }) => {
           subtitle="Single master pool paper accounting and reconciliation verification"
         />
         <EmptyStatePanel
-          title="Unified Treasury Disabled"
-          description="The 18-agent unified treasury feature flag is currently disabled on the backend engine."
+          title="18-Agent Unified Treasury Disabled on Preview"
+          description="The 18-agent unified treasury feature flag is disabled on this isolated preview instance and is separate from the 500 USDT VIOLET All-Cap paper campaign. Closed-loop Unified Account ($10k simulated router) and AI Brain telemetry remain observable below in read-only mode."
         />
-        {unifiedAccount && (
+        {unifiedError && (
+          <div className="text-xs font-mono text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2">
+            {unifiedError}
+          </div>
+        )}
+        {(unifiedAccount || brainStatus) && (
           <div className="nq-panel rounded-xl p-4 sm:p-5 space-y-3 border border-[#ff3555]/25">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <h3 className="text-sm font-semibold text-white flex items-center gap-2">
                 <ArrowRightLeft className="w-4 h-4 text-[#ff3555]" />
-                <span>Unified Trading Account &amp; Closed-Loop Router</span>
+                <span>Unified Trading Account &amp; AI Brain Summary (Read-Only)</span>
               </h3>
               <span className="px-2 py-1 rounded bg-[#10B981]/15 border border-[#10B981]/30 text-[#10B981] text-[10px] font-mono">
-                {unifiedAccount.invariant.conservation_ok ? 'CONSERVATION OK' : 'PAPER SIMULATION ONLY'}
+                {unifiedAccount?.invariant.conservation_ok ? 'CONSERVATION OK' : 'PAPER SIMULATION ONLY'}
               </span>
             </div>
-            <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
-              {Object.entries(unifiedAccount.balances_usd).map(([venue, bal]) => (
-                <div key={venue} className="bg-[#080305] border border-white/[0.08] rounded-xl p-3 space-y-1">
-                  <div className="text-[10px] font-mono uppercase tracking-wider text-slate-400">
-                    {venue.replace(/_/g, ' ')}
+            {unifiedAccount && (
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+                {Object.entries(unifiedAccount.balances_usd).map(([venue, bal]) => (
+                  <div key={venue} className="bg-[#080305] border border-white/[0.08] rounded-xl p-3 space-y-1">
+                    <div className="text-[10px] font-mono uppercase tracking-wider text-slate-400">
+                      {venue.replace(/_/g, ' ')}
+                    </div>
+                    <div className="text-sm font-mono font-bold text-white">${fmtDec(bal)}</div>
+                    <div className="text-[10px] font-mono text-slate-500 truncate">
+                      {unifiedAccount.allowlist[venue] ?? 'allowlisted'}
+                    </div>
                   </div>
-                  <div className="text-sm font-mono font-bold text-white">${fmtDec(bal)}</div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
+            {brainStatus && (
+              <div className="bg-[#080305] border border-white/[0.08] rounded-xl p-3 flex flex-wrap items-center justify-between gap-2 text-[11px] font-mono">
+                <span className="text-slate-300">
+                  AI Brain: {brainStatus.agents.join(' + ')} · Mode {brainStatus.mode}
+                </span>
+                <span className="text-[#10B981]">
+                  Equity ${fmtDec(brainStatus.invariant.current_venue_total_usd)} (Drift ${brainStatus.invariant.drift_usd})
+                </span>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -525,22 +522,9 @@ export const TreasuryAuditView: React.FC<Props> = ({ state, initData }) => {
             <span className="px-2 py-1 rounded bg-[#10B981]/15 border border-[#10B981]/30 text-[#10B981] text-[10px] font-mono">
               {unifiedAccount?.invariant.conservation_ok ? 'CONSERVATION OK' : 'PAPER SIMULATION ONLY'}
             </span>
-            <button
-              type="button"
-              disabled={simulating}
-              onClick={() => handleSimulateTransfer('cex_binance')}
-              className="px-2.5 py-1 rounded bg-[#ff3555]/20 hover:bg-[#ff3555]/30 border border-[#ff3555]/40 text-[#ff8d99] text-[11px] font-mono disabled:opacity-50"
-            >
-              {simulating ? 'Simulating...' : 'Simulate Hub → Binance ($250)'}
-            </button>
-            <button
-              type="button"
-              disabled={simulating}
-              onClick={() => handleSimulateTransfer('dex_solana')}
-              className="px-2.5 py-1 rounded bg-[#ff3555]/20 hover:bg-[#ff3555]/30 border border-[#ff3555]/40 text-[#ff8d99] text-[11px] font-mono disabled:opacity-50"
-            >
-              {simulating ? 'Simulating...' : 'Simulate Hub → Solana ($250)'}
-            </button>
+            <span className="px-2 py-1 rounded bg-[#ff3555]/15 border border-[#ff3555]/30 text-[#ff8d99] text-[10px] font-mono">
+              READ-ONLY TELEMETRY (HTTP 405 WRITES DISABLED)
+            </span>
           </div>
         </div>
 

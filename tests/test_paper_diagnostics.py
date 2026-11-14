@@ -71,6 +71,12 @@ def test_freshness_and_invalid_observations(tmp_path):
         assert observation_status(path, now)['status'] == 'invalid'
     path.write_text('{"timestamp":"2000-01-01T00:00:00Z"}')
     assert observation_status(path, now)['status'] == 'stale'
+    import json
+    path.write_text(json.dumps({'timestamp': now.isoformat(), 'window_complete': True,
+                                'ledger_error_type': 'OperationalError', 'secret': 'never-return'}))
+    result = observation_status(path, now)
+    assert result['status'] == 'fresh' and result['ledger_status'] == 'error'
+    assert result['window_complete'] is True and 'secret' not in result
 
 
 def test_monitor_local_readonly_and_completed_window(service, tmp_path):

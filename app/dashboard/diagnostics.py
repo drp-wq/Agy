@@ -34,7 +34,11 @@ def observation_status(path: Path, now=None):
         value = json.loads(content)
         if not isinstance(value, dict) or not value.get('timestamp'):
             raise ValueError('missing timestamp')
-        return freshness(value['timestamp'], now)
+        result = freshness(value['timestamp'], now)
+        result['window_complete'] = value.get('window_complete') is True
+        result['ledger_status'] = ('error' if value.get('ledger_error_type') else
+                                   'ok' if isinstance(value.get('exchanges'), dict) else 'unknown')
+        return result
     except FileNotFoundError:
         return freshness(None, now)
     except (OSError, ValueError, TypeError):

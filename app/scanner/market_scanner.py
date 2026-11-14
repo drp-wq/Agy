@@ -99,6 +99,8 @@ class GlobalMarketScanner:
                     symbol=symbol,
                     market_type=market_type,
                     timestamp=datetime.now(timezone.utc),
+                    ticker_source_timestamp_ms=ticker.get("timestamp"),
+                    book_source_timestamp_ms=ob.source_timestamp_ms,
                     last_price=last_price,
                     bid=ob.best_bid,
                     ask=ob.best_ask,

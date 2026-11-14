@@ -42,10 +42,12 @@ EXCHANGE_FEE_SCHEDULE: dict[tuple[ExchangeId, MarketType], dict[str, float]] = {
 class PaperExecutionEngine:
     """Thread-safe, idempotent, persistent paper order & position coordinator."""
 
-    def __init__(self, db: PaperDatabase, risk_guardian: GlobalRiskGuardian) -> None:
+    def __init__(self, db: PaperDatabase, risk_guardian: GlobalRiskGuardian, fee_schedule=None, marketable_limit_taker=False) -> None:
         assert_paper_only("paper")
         self.db = db
         self.risk = risk_guardian
+        self.fee_schedule = fee_schedule if fee_schedule is not None else dict(EXCHANGE_FEE_SCHEDULE)
+        self.marketable_limit_taker = marketable_limit_taker
         self._lock = threading.RLock()
 
     def ensure_bot_account(self, bot_id: str, exchange: ExchangeId, initial_equity_usd: float) -> dict[str, Any]:
@@ -198,10 +200,10 @@ class PaperExecutionEngine:
                     )
                 return order
 
-            fee_sched = EXCHANGE_FEE_SCHEDULE.get(
+            fee_sched = self.fee_schedule.get((signal.exchange, signal.market_type, signal.symbol)) or self.fee_schedule.get(
                 (signal.exchange, signal.market_type), {"maker": 0.0008, "taker": 0.0010}
             )
-            fee_rate = fee_sched["maker"] if order_type == OrderType.LIMIT else fee_sched["taker"]
+            fee_rate = fee_sched['taker'] if self.marketable_limit_taker else (fee_sched["maker"] if order_type == OrderType.LIMIT else fee_sched["taker"])
 
             # Enforce free margin reservation check when bot account exists (skip for reducing/closing orders)
             acct = self.db.get_account(bot_id)
@@ -462,7 +464,7 @@ class PaperExecutionEngine:
                     continue
 
                 exit_side = Side.SELL if pos.direction == Direction.LONG else Side.BUY
-                fee_sched = EXCHANGE_FEE_SCHEDULE.get(
+                fee_sched = self.fee_schedule.get((pos.exchange, pos.market_type, pos.symbol)) or self.fee_schedule.get(
                     (pos.exchange, pos.market_type), {"taker": 0.001}
                 )
                 exit_slip_bps = round(max(2.0, snap.spread_bps / 2.0), 3)

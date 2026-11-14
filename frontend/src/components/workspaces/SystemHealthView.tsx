@@ -3,7 +3,12 @@ import { Server, ShieldCheck, RefreshCw, Terminal, CheckCircle2, AlertTriangle, 
 import { ExchangeId, MiniAppHealthResponse, LIVE_EXECUTION_PERMANENTLY_DISABLED } from '../../types/quant';
 import { EXCHANGE_META, SectionHeader } from '../common/TerminalPrimitives';
 import { formatAgeSeconds, formatDuration } from '../../utils/formatters';
-import { fetchVioletResearch, VioletResearchPayload } from '../../services/violetResearchApi';
+import {
+  fetchPersistenceHealth,
+  fetchVioletResearch,
+  PersistenceHealthPayload,
+  VioletResearchPayload
+} from '../../services/violetResearchApi';
 
 interface SystemHealthViewProps {
   health: MiniAppHealthResponse | null;
@@ -21,6 +26,8 @@ export const SystemHealthView: React.FC<SystemHealthViewProps> = ({
   const [showIntegrationSpec, setShowIntegrationSpec] = useState(false);
   const [violetResearch, setVioletResearch] = useState<VioletResearchPayload | null>(null);
   const [violetError, setVioletError] = useState<string | null>(null);
+  const [persistence, setPersistence] = useState<PersistenceHealthPayload | null>(null);
+  const [persistenceError, setPersistenceError] = useState<string | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -35,6 +42,19 @@ export const SystemHealthView: React.FC<SystemHealthViewProps> = ({
         if (err instanceof DOMException && err.name === 'AbortError') return;
         if (!controller.signal.aborted) {
           setVioletError(err instanceof Error ? err.message : 'Campaign status unavailable');
+        }
+      });
+    fetchPersistenceHealth(initData, controller.signal)
+      .then((res) => {
+        if (!controller.signal.aborted) {
+          setPersistence(res);
+          setPersistenceError(null);
+        }
+      })
+      .catch((err) => {
+        if (err instanceof DOMException && err.name === 'AbortError') return;
+        if (!controller.signal.aborted) {
+          setPersistenceError(err instanceof Error ? err.message : 'Persistence health unavailable');
         }
       });
     return () => controller.abort();
@@ -197,11 +217,22 @@ export const SystemHealthView: React.FC<SystemHealthViewProps> = ({
         ) : !violetResearch ? (
           <p className="text-xs text-[#c28e95] font-mono">Loading 72-hour campaign status…</p>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs font-mono">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs font-mono">
             <div className="rounded-lg bg-[#080305] border border-[#ff3555]/20 p-3">
-              <div className="text-[#b8868e]">Worker Health</div>
+              <div className="text-[#b8868e]">Active Campaign &amp; Budget</div>
+              <div className="text-sm font-bold text-[#ffe3e5] mt-1 truncate">
+                {violetResearch.violet.budget
+                  ? `${violetResearch.violet.budget.total_initial_usdt.toFixed(2)} USDT`
+                  : '500.00 USDT'}
+              </div>
+              <div className="text-[11px] text-[#c28e95] mt-0.5 truncate">
+                {violetResearch.violet.campaign_id || 'violet-all-cap'} · 0x Leverage
+              </div>
+            </div>
+            <div className="rounded-lg bg-[#080305] border border-[#ff3555]/20 p-3">
+              <div className="text-[#b8868e]">Worker Health &amp; Gate</div>
               <div className="text-sm font-bold text-[#ffe3e5] mt-1">
-                {(violetResearch.violet.worker_health || 'unknown').toUpperCase()}
+                {(violetResearch.violet.worker_health || 'unknown').toUpperCase()} · {violetResearch.violet.entry_gate?.status || 'ACTIVE'}
               </div>
               <div className="text-[11px] text-[#c28e95] mt-0.5">{violetResearch.violet.source}</div>
             </div>
@@ -223,6 +254,62 @@ export const SystemHealthView: React.FC<SystemHealthViewProps> = ({
                 {typeof violetResearch.violet.campaign?.remaining_hours === 'number'
                   ? `${violetResearch.violet.campaign.remaining_hours.toFixed(1)}h remaining`
                   : 'Solana & Crypto ledgers isolated'}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Persistence & Scheduler Health */}
+      <div className="nq-panel rounded-xl p-4 space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-[#ff3555]/20">
+          <h3 className="text-sm font-semibold text-[#ffe3e5] flex items-center gap-2">
+            <ShieldCheck className="w-4 h-4 text-[#ff6375]" />
+            <span>Closed-Loop Persistence &amp; Scheduler Heartbeat</span>
+          </h3>
+          <span
+            className={`text-[11px] font-mono ${
+              persistence?.status === 'ok' ? 'text-[#10B981]' : 'text-[#ffb16c]'
+            }`}
+          >
+            {persistence ? `STATUS: ${persistence.status.toUpperCase()}` : 'CHECKING'}
+          </span>
+        </div>
+        {persistenceError ? (
+          <p className="text-xs text-[#ffb16c] font-mono">Persistence check failed: {persistenceError}</p>
+        ) : !persistence ? (
+          <p className="text-xs text-[#c28e95] font-mono">Loading persistence diagnostics…</p>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs font-mono">
+            <div className="rounded-lg bg-[#080305] border border-[#ff3555]/20 p-3">
+              <div className="text-[#b8868e]">SQLite Ledger</div>
+              <div className="text-sm font-bold text-[#ffe3e5] mt-1">
+                {persistence.sqlite.status.toUpperCase()}
+              </div>
+              <div className="text-[11px] text-[#c28e95] mt-0.5">
+                {persistence.sqlite.integrity ? `Integrity: ${persistence.sqlite.integrity}` : persistence.sqlite.reason || 'Unavailable'}
+              </div>
+            </div>
+            <div className="rounded-lg bg-[#080305] border border-[#ff3555]/20 p-3">
+              <div className="text-[#b8868e]">Brain Scheduler</div>
+              <div className="text-sm font-bold text-[#ffe3e5] mt-1">
+                {persistence.scheduler.status.toUpperCase()}
+              </div>
+              <div className="text-[11px] text-[#c28e95] mt-0.5">
+                {typeof persistence.scheduler.age_seconds === 'number'
+                  ? `Heartbeat ${Math.round(persistence.scheduler.age_seconds)}s ago`
+                  : 'No heartbeat recorded'}
+              </div>
+            </div>
+            <div className="rounded-lg bg-[#080305] border border-[#ff3555]/20 p-3">
+              <div className="text-[#b8868e]">Risk Guardian Gate</div>
+              <div className="text-sm font-bold text-[#ffe3e5] mt-1">
+                {persistence.risk_guardian.status.toUpperCase()}
+              </div>
+              <div className="text-[11px] text-[#c28e95] mt-0.5">
+                {persistence.last_brain_cycle_timestamp
+                  ? `Last cycle ${persistence.last_brain_cycle_timestamp.slice(0, 19)}Z`
+                  : 'No brain cycle timestamp'}
               </div>
             </div>
           </div>

@@ -1,5 +1,17 @@
-import React, { useState } from 'react';
-import { ArrowUpRight, ShieldCheck, Activity, TrendingUp } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import {
+  ArrowLeftRight,
+  ArrowUpRight,
+  Bell,
+  BrainCircuit,
+  Cpu,
+  Landmark,
+  Server,
+  ShieldAlert,
+  ShieldCheck,
+  Activity,
+  TrendingUp
+} from 'lucide-react';
 import {
   ExchangeId,
   FuturesPosition,
@@ -18,6 +30,19 @@ import {
   summarizeLiveReadOnlyAuth,
   summarizeRealizedUnrealized
 } from '../../utils/telemetryMetrics';
+import {
+  fetchPersistenceHealth,
+  fetchUnifiedAccount,
+  fetchUnifiedBrainStatus,
+  fetchVioletResearch,
+  fetchVioletSolana,
+  PersistenceHealthPayload,
+  SolanaSummaryPayload,
+  UnifiedAccountPayload,
+  UnifiedBrainStatusPayload,
+  VioletResearchPayload
+} from '../../services/violetResearchApi';
+import { VioletCampaignPanel } from './VioletCampaignPanel';
 
 interface GlobalOverviewViewProps {
   state: MiniAppStateResponse;
@@ -36,6 +61,37 @@ export const GlobalOverviewView: React.FC<GlobalOverviewViewProps> = ({
   const [chartMarket, setChartMarket] = useState<MarketType>('futures');
   const [chartSymbol, setChartSymbol] = useState<string>('BTC/USDT');
   const [chartTf, setChartTf] = useState<Timeframe>('15m');
+
+  const [brainStatus, setBrainStatus] = useState<UnifiedBrainStatusPayload | null>(null);
+  const [unifiedAccount, setUnifiedAccount] = useState<UnifiedAccountPayload | null>(null);
+  const [solanaSummary, setSolanaSummary] = useState<SolanaSummaryPayload | null>(null);
+  const [persistenceHealth, setPersistenceHealth] = useState<PersistenceHealthPayload | null>(null);
+  const [violetResearch, setVioletResearch] = useState<VioletResearchPayload | null>(null);
+  const [violetError, setVioletError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    Promise.allSettled([
+      fetchUnifiedBrainStatus(initData, controller.signal),
+      fetchUnifiedAccount(initData, controller.signal),
+      fetchVioletSolana(initData, controller.signal),
+      fetchPersistenceHealth(initData, controller.signal),
+      fetchVioletResearch(initData, controller.signal)
+    ]).then(([brainRes, acctRes, solRes, persRes, violetRes]) => {
+      if (controller.signal.aborted) return;
+      if (brainRes.status === 'fulfilled') setBrainStatus(brainRes.value);
+      if (acctRes.status === 'fulfilled') setUnifiedAccount(acctRes.value);
+      if (solRes.status === 'fulfilled') setSolanaSummary(solRes.value);
+      if (persRes.status === 'fulfilled') setPersistenceHealth(persRes.value);
+      if (violetRes.status === 'fulfilled') {
+        setVioletResearch(violetRes.value);
+        setVioletError(null);
+      } else {
+        setVioletError(violetRes.reason instanceof Error ? violetRes.reason.message : 'VIOLET telemetry unavailable');
+      }
+    });
+    return () => controller.abort();
+  }, [initData, state.generated_at]);
 
   const openFutures = state.futures_positions.filter((p) => p.status === 'open');
   const matchingPosition = openFutures.find(
@@ -63,10 +119,23 @@ export const GlobalOverviewView: React.FC<GlobalOverviewViewProps> = ({
         }
       />
 
+      {/* Active VIOLET 500 USDT All-Cap Paper Campaign (Isolated from Legacy & Closed-Loop Router) */}
+      <VioletCampaignPanel research={violetResearch} error={violetError} />
+
+      {/* Legacy Preview Protective Ledger Header */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h3 className="font-display text-xs uppercase tracking-[0.18em] text-[#c28e95]">
+          Legacy Preview Protective Ledger (Separate from 500 USDT VIOLET Campaign)
+        </h3>
+        <span className="text-[11px] font-mono text-[#a1737a]">
+          Protective exits only · No new legacy entries
+        </span>
+      </div>
+
       {/* Top KPI Strip (Single Elevation, Hairline Separated) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="nq-panel rounded-xl p-4">
-          <div className="text-xs text-slate-400">Aggregate Paper Equity</div>
+          <div className="text-xs text-slate-400">Legacy Preview Paper Equity</div>
           <div className="text-2xl font-mono font-bold text-white mt-1">
             {formatUsd(state.risk.total_paper_equity_usd)}
           </div>
@@ -192,6 +261,205 @@ export const GlobalOverviewView: React.FC<GlobalOverviewViewProps> = ({
             </div>
           );
         })}
+      </div>
+
+      {/* VIOLET Scarlet Command Hub — Dedicated Navigation & Real-Status Tiles */}
+      <div className="space-y-2.5">
+        <div className="flex items-center justify-between">
+          <h3 className="font-display text-xs uppercase tracking-[0.18em] text-[#ff6375]">
+            VIOLET Scarlet Command Modules
+          </h3>
+          <span className="text-[11px] font-mono text-[#c28e95]">
+            Read-only telemetry · Tap any tile to open workspace
+          </span>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          <button
+            type="button"
+            onClick={() => onNavigate('brain')}
+            className="nq-panel nq-panel-interactive rounded-xl p-3.5 text-left space-y-1.5"
+          >
+            <div className="flex items-center justify-between text-xs font-medium text-[#ffe3e5]">
+              <span className="flex items-center gap-1.5">
+                <BrainCircuit className="w-4 h-4 text-[#ff6375]" />
+                <span>Unified AI Brain</span>
+              </span>
+              <ArrowUpRight className="w-3.5 h-3.5 text-[#c28e95]" />
+            </div>
+            <div className="text-sm font-mono font-bold text-[#ffe3e5]">
+              {brainStatus ? brainStatus.mode : 'Unavailable'}
+            </div>
+            <div className="text-[11px] font-mono text-[#c28e95] truncate">
+              {brainStatus
+                ? `${brainStatus.agents.join(' + ')} · ${brainStatus.last_report ? (brainStatus.last_report.skipped_reasons[0] || 'Cycle OK') : 'No cycle yet'}`
+                : 'Awaiting /api/violet/brain/status'}
+            </div>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => onNavigate('brain')}
+            className="nq-panel nq-panel-interactive rounded-xl p-3.5 text-left space-y-1.5"
+          >
+            <div className="flex items-center justify-between text-xs font-medium text-[#ffe3e5]">
+              <span className="flex items-center gap-1.5">
+                <ArrowLeftRight className="w-4 h-4 text-[#ff6375]" />
+                <span>Closed-Loop Router</span>
+              </span>
+              <ArrowUpRight className="w-3.5 h-3.5 text-[#c28e95]" />
+            </div>
+            <div className="text-sm font-mono font-bold text-[#10B981]">
+              {unifiedAccount
+                ? `$${Number(unifiedAccount.invariant.current_venue_total_usd).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                : 'Unavailable'}
+            </div>
+            <div className="text-[11px] font-mono text-[#c28e95]">
+              {unifiedAccount
+                ? `${unifiedAccount.invariant.conservation_ok ? 'Separate $10k Sim' : 'Drift Detected'} · ${Object.keys(unifiedAccount.balances_usd).length} venues`
+                : 'Closed-loop router status'}
+            </div>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => onNavigate('treasury')}
+            className="nq-panel nq-panel-interactive rounded-xl p-3.5 text-left space-y-1.5"
+          >
+            <div className="flex items-center justify-between text-xs font-medium text-[#ffe3e5]">
+              <span className="flex items-center gap-1.5">
+                <Landmark className="w-4 h-4 text-[#ff6375]" />
+                <span>18-Agent Treasury</span>
+              </span>
+              <ArrowUpRight className="w-3.5 h-3.5 text-[#c28e95]" />
+            </div>
+            <div className="text-sm font-mono font-bold text-[#ffe3e5]">
+              {state.unified_treasury?.enabled
+                ? `${state.unified_treasury.active_slots ?? 0}/${state.unified_treasury.max_agent_slots ?? 18} Active`
+                : 'Disabled on Preview'}
+            </div>
+            <div className="text-[11px] font-mono text-[#c28e95]">
+              {state.unified_treasury?.enabled
+                ? state.treasury_reconciliation?.balanced
+                  ? 'Master Pool Balanced'
+                  : 'Audit Check Needed'
+                : 'Separate from 500 USDT VIOLET'}
+            </div>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => onNavigate('solana')}
+            className="nq-panel nq-panel-interactive rounded-xl p-3.5 text-left space-y-1.5"
+          >
+            <div className="flex items-center justify-between text-xs font-medium text-[#ffe3e5]">
+              <span className="flex items-center gap-1.5">
+                <Cpu className="w-4 h-4 text-[#ff6375]" />
+                <span>Solana Research</span>
+              </span>
+              <ArrowUpRight className="w-3.5 h-3.5 text-[#c28e95]" />
+            </div>
+            <div
+              className={`text-sm font-mono font-bold ${
+                solanaSummary?.status === 'healthy' ? 'text-[#10B981]' : 'text-[#ffb16c]'
+              }`}
+            >
+              {solanaSummary ? solanaSummary.status.toUpperCase() : 'Unavailable'}
+            </div>
+            <div className="text-[11px] font-mono text-[#c28e95] truncate">
+              {solanaSummary
+                ? `${solanaSummary.verdict} · ${solanaSummary.observations ?? 0} obs`
+                : 'Isolated Solana paper ledger'}
+            </div>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => onNavigate('arbitrage')}
+            className="nq-panel nq-panel-interactive rounded-xl p-3.5 text-left space-y-1.5"
+          >
+            <div className="flex items-center justify-between text-xs font-medium text-[#ffe3e5]">
+              <span className="flex items-center gap-1.5">
+                <ArrowLeftRight className="w-4 h-4 text-[#ff6375]" />
+                <span>Arbitrage Lab</span>
+              </span>
+              <ArrowUpRight className="w-3.5 h-3.5 text-[#c28e95]" />
+            </div>
+            <div className="text-sm font-mono font-bold text-[#ffe3e5]">READ-ONLY LAB</div>
+            <div className="text-[11px] font-mono text-[#c28e95]">
+              Public books · BTC / ETH / SOL
+            </div>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => onNavigate('risk')}
+            className="nq-panel nq-panel-interactive rounded-xl p-3.5 text-left space-y-1.5"
+          >
+            <div className="flex items-center justify-between text-xs font-medium text-[#ffe3e5]">
+              <span className="flex items-center gap-1.5">
+                <ShieldAlert className="w-4 h-4 text-[#ff6375]" />
+                <span>Risk Command</span>
+              </span>
+              <ArrowUpRight className="w-3.5 h-3.5 text-[#c28e95]" />
+            </div>
+            <div
+              className={`text-sm font-mono font-bold ${
+                state.risk.emergency_stop_active ? 'text-[#EF4444]' : 'text-[#10B981]'
+              }`}
+            >
+              {state.risk.emergency_stop_active ? 'EMERGENCY STOP' : state.risk.circuit_breaker_state}
+            </div>
+            <div className="text-[11px] font-mono text-[#c28e95]">
+              Drawdown limit {state.risk.drawdown_limit_pct}%
+            </div>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => onNavigate('alerts')}
+            className="nq-panel nq-panel-interactive rounded-xl p-3.5 text-left space-y-1.5"
+          >
+            <div className="flex items-center justify-between text-xs font-medium text-[#ffe3e5]">
+              <span className="flex items-center gap-1.5">
+                <Bell className="w-4 h-4 text-[#ff6375]" />
+                <span>Alerts Stream</span>
+              </span>
+              <ArrowUpRight className="w-3.5 h-3.5 text-[#c28e95]" />
+            </div>
+            <div className="text-sm font-mono font-bold text-[#ffe3e5]">
+              {state.alerts.length} Active Alerts
+            </div>
+            <div className="text-[11px] font-mono text-[#c28e95]">
+              {state.telegram_owner.authenticated ? 'Owner Verified' : 'Preview Session'}
+            </div>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => onNavigate('system')}
+            className="nq-panel nq-panel-interactive rounded-xl p-3.5 text-left space-y-1.5"
+          >
+            <div className="flex items-center justify-between text-xs font-medium text-[#ffe3e5]">
+              <span className="flex items-center gap-1.5">
+                <Server className="w-4 h-4 text-[#ff6375]" />
+                <span>Service Health</span>
+              </span>
+              <ArrowUpRight className="w-3.5 h-3.5 text-[#c28e95]" />
+            </div>
+            <div
+              className={`text-sm font-mono font-bold ${
+                persistenceHealth?.status === 'ok' ? 'text-[#10B981]' : 'text-[#ffb16c]'
+              }`}
+            >
+              {persistenceHealth ? persistenceHealth.status.toUpperCase() : 'UNAVAILABLE'}
+            </div>
+            <div className="text-[11px] font-mono text-[#c28e95]">
+              {persistenceHealth
+                ? `SQLite ${persistenceHealth.sqlite.status} · Sched ${persistenceHealth.scheduler.status}`
+                : 'Check /api/violet/persistence/health'}
+            </div>
+          </button>
+        </div>
       </div>
 
       {/* Primary Interactive TradingView Lightweight Chart */}

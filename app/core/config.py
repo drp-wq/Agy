@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from dotenv import dotenv_values
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.core.logging_setup import register_sensitive_value
 from app.core.security import (
@@ -131,6 +131,26 @@ class MidLowCapConfig(BaseModel):
     min_oos_trades: int = Field(default=3, ge=1, le=50)
     min_oos_net_expectancy_r: float = Field(default=0.0, ge=-1.0, le=5.0)
     allocated_capital_usd: float = Field(default=2500.0, ge=100.0)
+
+
+class AllCapConfig(MidLowCapConfig):
+    """Opt-in Violet Lab policy; legacy mid/low defaults are untouched."""
+    micro_cap_min_usd: float = Field(default=1_000_000, gt=0)
+    mega_cap_min_usd: float = Field(default=200_000_000_000, gt=0)
+    min_liquidity_score: float = Field(default=.5, ge=0, le=1)
+    sleeve_capital_usd: float = Field(default=1000, ge=100)
+    cycle_timeout_sec: float = Field(default=90, ge=5, le=300)
+    max_risk_per_trade_pct: float = Field(default=0.0025, ge=0.0005, le=0.02)
+    min_order_notional_usd: float = Field(default=5.0, ge=1.0, le=100.0)
+
+    @model_validator(mode="after")
+    def validate_bands(self):
+        if not (self.micro_cap_min_usd < self.low_cap_min_usd < self.low_cap_max_usd
+                == self.mid_cap_min_usd < self.mid_cap_max_usd < self.mega_cap_min_usd):
+            raise ValueError("Cap bands must be contiguous and strictly ordered")
+        if self.allow_short or self.min_oos_net_expectancy_r < 0:
+            raise ValueError("Violet Lab requires long-only and nonnegative OOS gate")
+        return self
 
 
 class UnifiedTreasuryConfig(BaseModel):

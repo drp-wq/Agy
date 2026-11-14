@@ -118,9 +118,9 @@ def _compute_realized_and_analytics(
     # 2) Fill fees (-fee_usd for every entry/exit fill)
     # 3) Treasury-attributed funding settlements (+usd_value)
     events: list[tuple[int, str, float]] = []
-    ex_recorded_total: dict[str, float] = {ex.value: 0.0 for ex in ExchangeId}
-    ex_utc_day_pnl: dict[str, float] = {ex.value: 0.0 for ex in ExchangeId}
-    ex_24h_pnl: dict[str, float] = {ex.value: 0.0 for ex in ExchangeId}
+    ex_recorded_total: dict[str, float] = {ex: 0.0 for ex in ex_realized}
+    ex_utc_day_pnl: dict[str, float] = {ex: 0.0 for ex in ex_realized}
+    ex_24h_pnl: dict[str, float] = {ex: 0.0 for ex in ex_realized}
 
     close_pnls: list[float] = []
     strategy_stats: dict[str, dict[str, Any]] = {}
@@ -397,9 +397,9 @@ def build_miniapp_state_payload(
         b["bot_id"]: b["exchange"] for b in raw_snap.get("bots", [])
     }
 
-    ex_cash: dict[str, float] = {ex.value: 0.0 for ex in ExchangeId}
-    ex_realized: dict[str, float] = {ex.value: 0.0 for ex in ExchangeId}
-    ex_reserved_margin: dict[str, float] = {ex.value: 0.0 for ex in ExchangeId}
+    ex_cash: dict[str, float] = {ex.value: 0.0 for ex in service.registry.all()}
+    ex_realized: dict[str, float] = {ex.value: 0.0 for ex in service.registry.all()}
+    ex_reserved_margin: dict[str, float] = {ex.value: 0.0 for ex in service.registry.all()}
     for acc in accounts:
         ex_id = bot_exchange.get(acc["bot_id"]) or str(acc.get("exchange") or "")
         if ex_id in ex_cash:
@@ -407,8 +407,8 @@ def build_miniapp_state_payload(
             ex_realized[ex_id] += float(acc.get("realized_pnl_usd") or 0.0)
             ex_reserved_margin[ex_id] += float(acc.get("reserved_margin_usd") or 0.0)
 
-    ex_unrealized_map: dict[str, float] = {ex.value: 0.0 for ex in ExchangeId}
-    ex_notional_map: dict[str, float] = {ex.value: 0.0 for ex in ExchangeId}
+    ex_unrealized_map: dict[str, float] = {ex.value: 0.0 for ex in service.registry.all()}
+    ex_notional_map: dict[str, float] = {ex.value: 0.0 for ex in service.registry.all()}
     for p in positions:
         ex_id = p.exchange.value
         ex_unrealized_map[ex_id] = ex_unrealized_map.get(ex_id, 0.0) + float(p.unrealized_pnl_usd or 0.0)
@@ -436,7 +436,7 @@ def build_miniapp_state_payload(
     account_snapshots = raw_snap.get("readonly_account_snapshots") or {}
     authenticated_exchanges: list[str] = []
 
-    for ex in ExchangeId:
+    for ex in service.registry.all():
         ex_id = ex.value
         h = health_by_ex.get(ex_id, {})
         ex_auth = auth_ver.get(ex_id, {})
@@ -736,7 +736,7 @@ def build_miniapp_state_payload(
 
     total_unrealized = sum(p.unrealized_pnl_usd for p in positions)
     gross_notional_exposure = sum(abs(p.qty * p.mark_price) for p in positions)
-    total_reserved_margin = sum(float(exchanges_map[ex.value]["locked_margin_usd"]) for ex in ExchangeId)
+    total_reserved_margin = sum(float(exchanges_map[ex.value]["locked_margin_usd"]) for ex in service.registry.all())
     total_cash = sum(ex_cash.values())
     free_paper_capital = max(0.0, total_cash - total_reserved_margin)
     margin_allocation_pct = round((total_reserved_margin / total_eq) * 100.0, 2) if total_eq > 0 else 0.0
@@ -781,7 +781,7 @@ def build_miniapp_state_payload(
         "total_live_readonly_equity_usd": None,
         "live_readonly_auth_summary": {
             "authenticated_exchanges": authenticated_exchanges,
-            "total_exchanges": len(ExchangeId),
+            "total_exchanges": len(service.registry.all()),
             "usd_valuation_available": False,
             "reason": "Spot and cross-margin exchange balances require verified USD conversion quotes before aggregate summation.",
         },

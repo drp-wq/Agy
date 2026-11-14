@@ -26,7 +26,9 @@ export type Timeframe = '1m' | '5m' | '15m' | '1h' | '4h' | '1d';
 
 export type NavSectionId =
   | 'overview'
+  | 'brain'
   | 'solana'
+  | 'arbitrage'
   | 'scanner'
   | 'opportunities'
   | 'binance'
@@ -35,6 +37,9 @@ export type NavSectionId =
   | 'positions'
   | 'orders'
   | 'analytics'
+  | 'pnl'
+  | 'ledger'
+  | 'strategies'
   | 'risk'
   | 'treasury'
   | 'alerts'
@@ -136,6 +141,7 @@ export interface ExchangeAccountStatus {
   label: string;
   public_feed_ok: boolean;
   public_latency_ms: number | null;
+  api_latency_ms?: number | null;
   private_auth_ok: boolean;
   private_auth_error: string | null;
   last_sync_ts: number;
@@ -162,6 +168,10 @@ export interface ExchangeAccountStatus {
     margin_ratio_pct?: number | null;
     im_rate_pct?: number | null;
     mm_rate_pct?: number | null;
+    account_status?: string | null;
+    freshness?: string | null;
+    auth_state?: string | null;
+    age_seconds?: number | null;
   };
   supported_pairs: string[];
 }
