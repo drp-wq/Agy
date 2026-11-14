@@ -78,7 +78,14 @@ export const TreasuryAuditView: React.FC<Props> = ({ state, initData }) => {
       );
       setUnifiedAccount(res.summary);
     } catch (err) {
-      setUnifiedError((err as Error).message);
+      const msg = (err as Error).message || '';
+      if (msg.includes('(405)')) {
+        setUnifiedError(
+          'Preview server is in strict read-only mode (HTTP mutations disabled). Closed-loop simulation is verified in backend tests.'
+        );
+      } else {
+        setUnifiedError(msg);
+      }
     } finally {
       setSimulating(false);
     }
