@@ -250,3 +250,101 @@ export async function fetchVioletSolana(initData?: string, signal?: AbortSignal)
   const json = await res.json();
   return validateSolanaSummary(json);
 }
+
+export interface ClosedLoopTransferItem {
+  transfer_id: string;
+  idempotency_key: string;
+  source_venue: string;
+  destination_venue: string;
+  destination_address: string;
+  asset: string;
+  amount_usd: string;
+  fee_usd: string;
+  net_amount_usd: string;
+  state: string;
+  reason: string;
+  requested_by: string;
+  created_at_utc: string;
+  settled_at_utc?: string | null;
+}
+
+export interface UnifiedAccountPayload {
+  mode: string;
+  live_execution_enabled: false;
+  active_cex_venues: string[];
+  active_dex_venues: string[];
+  hub_venue: string;
+  balances_usd: Record<string, string>;
+  allowlist: Record<string, string>;
+  invariant: {
+    conservation_ok: boolean;
+    initial_equity_usd: string;
+    current_venue_total_usd: string;
+    in_flight_usd: string;
+    cumulative_fees_usd: string;
+    drift_usd: string;
+  };
+  risk_gate: {
+    emergency_stop_active: boolean;
+    circuit_breaker_tripped: boolean;
+  };
+  brain_sync?: {
+    agents: string[];
+    shared_skills: string[];
+    governance_contract: string;
+    paper_only: boolean;
+  };
+  transfer_count: number;
+  transfers: ClosedLoopTransferItem[];
+}
+
+export async function fetchUnifiedAccount(initData?: string, signal?: AbortSignal): Promise<UnifiedAccountPayload> {
+  const res = await fetch(`${getBaseUrl()}/api/violet/unified-account`, {
+    method: 'GET',
+    headers: buildAuthHeaders(initData),
+    credentials: 'same-origin',
+    cache: 'no-store',
+    signal
+  });
+  if (res.status === 401 || res.status === 403) {
+    throw new TelegramAuthError('Authentication required to read Unified Account telemetry.', res.status);
+  }
+  if (!res.ok) {
+    throw new ApiFetchError(`Unified Account endpoint returned HTTP ${res.status}`, res.status);
+  }
+  const json = (await res.json()) as UnifiedAccountPayload;
+  if (json.live_execution_enabled !== false) {
+    throw new ApiFetchError('Safety policy violation: live_execution_enabled must be false');
+  }
+  return json;
+}
+
+export async function simulateClosedLoopTransfer(
+  params: {
+    source_venue: string;
+    destination_venue: string;
+    amount_usd: string;
+    idempotency_key: string;
+    reason?: string;
+  },
+  initData?: string
+): Promise<{ summary: UnifiedAccountPayload; transfer: ClosedLoopTransferItem }> {
+  const res = await fetch(`${getBaseUrl()}/api/violet/transfers/simulate`, {
+    method: 'POST',
+    headers: {
+      ...buildAuthHeaders(initData),
+      'Content-Type': 'application/json'
+    },
+    credentials: 'same-origin',
+    cache: 'no-store',
+    body: JSON.stringify(params)
+  });
+  if (res.status === 401 || res.status === 403) {
+    throw new TelegramAuthError('Blocked or unauthorized to simulate closed-loop transfer.', res.status);
+  }
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new ApiFetchError(`Closed-loop simulation failed (${res.status}): ${errText}`, res.status);
+  }
+  return (await res.json()) as { summary: UnifiedAccountPayload; transfer: ClosedLoopTransferItem };
+}

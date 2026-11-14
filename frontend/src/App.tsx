@@ -485,7 +485,7 @@ export default function App() {
                 {activeSection === 'orders' && <PaperOrdersView state={state} />}
                 {activeSection === 'analytics' && <PortfolioAnalyticsView state={state} />}
                 {activeSection === 'risk' && <RiskCommandView state={state} health={health} />}
-                {activeSection === 'treasury' && <TreasuryAuditView state={state} />}
+                {activeSection === 'treasury' && <TreasuryAuditView state={state} initData={telegram.initData} />}
                 {activeSection === 'alerts' && <TelegramAlertsView state={state} telegram={telegram} />}
                 {activeSection === 'system' && (
                   <SystemHealthView health={health} isDemo={isDemo} initData={telegram.initData} onRefresh={() => fetchAll(false)} />

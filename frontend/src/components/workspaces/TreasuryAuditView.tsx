@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   CheckCircle2,
   AlertTriangle,
@@ -6,13 +6,21 @@ import {
   Landmark,
   FileCheck2,
   Users,
-  Wallet
+  Wallet,
+  ArrowRightLeft,
+  Cpu
 } from 'lucide-react';
 import { ExchangeId, MiniAppStateResponse } from '../../types/quant';
 import { EmptyStatePanel, EXCHANGE_META, SectionHeader } from '../common/TerminalPrimitives';
+import {
+  fetchUnifiedAccount,
+  simulateClosedLoopTransfer,
+  UnifiedAccountPayload
+} from '../../services/violetResearchApi';
 
 interface Props {
   state: MiniAppStateResponse;
+  initData?: string;
 }
 
 function fmtDec(val: string | number | undefined | null, digits = 2): string {
@@ -32,9 +40,49 @@ function fmtPct(val: string | number | undefined | null): string {
   return `${(num * 100).toFixed(2)}%`;
 }
 
-export const TreasuryAuditView: React.FC<Props> = ({ state }) => {
+export const TreasuryAuditView: React.FC<Props> = ({ state, initData }) => {
   const [exchangeFilter, setExchangeFilter] = useState<'all' | ExchangeId>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'idle'>('all');
+  const [unifiedAccount, setUnifiedAccount] = useState<UnifiedAccountPayload | null>(null);
+  const [unifiedError, setUnifiedError] = useState<string | null>(null);
+  const [simulating, setSimulating] = useState(false);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetchUnifiedAccount(initData, controller.signal)
+      .then((payload) => {
+        setUnifiedAccount(payload);
+        setUnifiedError(null);
+      })
+      .catch((err) => {
+        if ((err as Error).name !== 'AbortError') {
+          setUnifiedError((err as Error).message);
+        }
+      });
+    return () => controller.abort();
+  }, [initData]);
+
+  const handleSimulateTransfer = async (destinationVenue: string) => {
+    setSimulating(true);
+    setUnifiedError(null);
+    try {
+      const res = await simulateClosedLoopTransfer(
+        {
+          source_venue: 'hub_binance_master',
+          destination_venue: destinationVenue,
+          amount_usd: '250.00',
+          idempotency_key: `ui_${destinationVenue}_${Date.now()}`,
+          reason: 'scarlet_terminal_paper_rebalance'
+        },
+        initData
+      );
+      setUnifiedAccount(res.summary);
+    } catch (err) {
+      setUnifiedError((err as Error).message);
+    } finally {
+      setSimulating(false);
+    }
+  };
 
   const treasury = state.unified_treasury;
   const recon = state.treasury_reconciliation;
@@ -430,6 +478,115 @@ export const TreasuryAuditView: React.FC<Props> = ({ state }) => {
           </div>
         </div>
       )}
+
+      {/* Unified Trading Account & Closed-Loop Router (Hub + 3 CEXs + Solana DEX) */}
+      <div className="nq-panel rounded-xl p-4 sm:p-5 space-y-4 border border-[#ff3555]/25">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+              <ArrowRightLeft className="w-4 h-4 text-[#ff3555]" />
+              <span>Unified Trading Account &amp; Closed-Loop Router</span>
+            </h3>
+            <p className="text-[11px] text-slate-400">
+              AGY + Codex shared brain · Hub ↔ Binance · OKX · Bybit ↔ Solana DEX (Allowlist-Only)
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="px-2 py-1 rounded bg-[#10B981]/15 border border-[#10B981]/30 text-[#10B981] text-[10px] font-mono">
+              {unifiedAccount?.invariant.conservation_ok ? 'CONSERVATION OK' : 'PAPER SIMULATION ONLY'}
+            </span>
+            <button
+              type="button"
+              disabled={simulating}
+              onClick={() => handleSimulateTransfer('cex_binance')}
+              className="px-2.5 py-1 rounded bg-[#ff3555]/20 hover:bg-[#ff3555]/30 border border-[#ff3555]/40 text-[#ff8d99] text-[11px] font-mono disabled:opacity-50"
+            >
+              {simulating ? 'Simulating...' : 'Simulate Hub → Binance ($250)'}
+            </button>
+            <button
+              type="button"
+              disabled={simulating}
+              onClick={() => handleSimulateTransfer('dex_solana')}
+              className="px-2.5 py-1 rounded bg-[#ff3555]/20 hover:bg-[#ff3555]/30 border border-[#ff3555]/40 text-[#ff8d99] text-[11px] font-mono disabled:opacity-50"
+            >
+              {simulating ? 'Simulating...' : 'Simulate Hub → Solana ($250)'}
+            </button>
+          </div>
+        </div>
+
+        {unifiedError && (
+          <div className="text-xs font-mono text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2">
+            {unifiedError}
+          </div>
+        )}
+
+        {unifiedAccount && (
+          <>
+            <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+              {Object.entries(unifiedAccount.balances_usd).map(([venue, bal]) => (
+                <div
+                  key={venue}
+                  className="bg-[#080305] border border-white/[0.08] rounded-xl p-3 space-y-1"
+                >
+                  <div className="text-[10px] font-mono uppercase tracking-wider text-slate-400">
+                    {venue.replace(/_/g, ' ')}
+                  </div>
+                  <div className="text-sm font-mono font-bold text-white">${fmtDec(bal)}</div>
+                  <div className="text-[10px] font-mono text-slate-500 truncate">
+                    {unifiedAccount.allowlist[venue] ?? 'allowlisted'}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {unifiedAccount.brain_sync && (
+              <div className="bg-[#080305] border border-white/[0.08] rounded-xl p-3 flex flex-wrap items-center justify-between gap-2 text-[11px] font-mono">
+                <div className="flex items-center gap-2 text-slate-300">
+                  <Cpu className="w-3.5 h-3.5 text-[#ff6375]" />
+                  <span>AI Brain Sync: {unifiedAccount.brain_sync.agents.join(' + ')}</span>
+                  <span className="text-slate-500">·</span>
+                  <span className="text-slate-400">
+                    Skills: {unifiedAccount.brain_sync.shared_skills.join(', ')}
+                  </span>
+                </div>
+                <span className="text-[#10B981]">
+                  Equity: ${fmtDec(unifiedAccount.invariant.current_venue_total_usd)} (Drift: $
+                  {unifiedAccount.invariant.drift_usd})
+                </span>
+              </div>
+            )}
+
+            {unifiedAccount.transfers.length > 0 && (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-[11px] font-mono">
+                  <thead className="text-slate-400 border-b border-white/[0.08]">
+                    <tr>
+                      <th className="py-1.5 pr-3">Route</th>
+                      <th className="py-1.5 pr-3">Amount</th>
+                      <th className="py-1.5 pr-3">Fee</th>
+                      <th className="py-1.5 pr-3">State</th>
+                      <th className="py-1.5">Reason</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/[0.05]">
+                    {unifiedAccount.transfers.slice(0, 8).map((t) => (
+                      <tr key={t.transfer_id} className="text-slate-300">
+                        <td className="py-1.5 pr-3">
+                          {t.source_venue} → {t.destination_venue}
+                        </td>
+                        <td className="py-1.5 pr-3">${fmtDec(t.amount_usd)}</td>
+                        <td className="py-1.5 pr-3">${fmtDec(t.fee_usd)}</td>
+                        <td className="py-1.5 pr-3 text-[#10B981]">{t.state}</td>
+                        <td className="py-1.5 text-slate-400">{t.reason}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </>
+        )}
+      </div>
     </div>
   );
 };
