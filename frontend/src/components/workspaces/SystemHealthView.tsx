@@ -24,10 +24,11 @@ export const SystemHealthView: React.FC<SystemHealthViewProps> = ({
         subtitle="Ubuntu 24.04 VPS FastAPI backend, Caddy TLS proxy, exchange adapter status, and read-only enforcement"
         actions={
           <button
+            type="button"
             onClick={onRefresh}
-            className="px-3.5 py-2 min-h-[38px] rounded-lg bg-[#00E5FF]/15 hover:bg-[#00E5FF]/25 border border-[#00E5FF]/35 text-[#00E5FF] text-xs font-medium flex items-center gap-1.5 whitespace-nowrap shrink-0"
+            className="px-3.5 py-2 min-h-[38px] rounded-lg bg-[#ff3555]/15 hover:bg-[#ff3555]/25 border border-[#ff3555]/45 text-[#ffe3e5] text-xs font-medium flex items-center gap-1.5 whitespace-nowrap shrink-0"
           >
-            <RefreshCw className="w-3.5 h-3.5" />
+            <RefreshCw className="w-3.5 h-3.5 text-[#ff6375]" />
             <span>Probe /health</span>
           </button>
         }
@@ -79,16 +80,16 @@ export const SystemHealthView: React.FC<SystemHealthViewProps> = ({
 
       {/* Exchange Adapter Connectivity Matrix */}
       <div className="nq-panel rounded-xl overflow-hidden">
-        <div className="px-4 py-3 border-b border-white/[0.08] flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-white flex items-center gap-2">
-            <Server className="w-4 h-4 text-[#00E5FF]" />
+        <div className="px-4 py-3 border-b border-[#ff3555]/20 flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-[#ffe3e5] flex items-center gap-2">
+            <Server className="w-4 h-4 text-[#ff6375]" />
             <span>Exchange Adapter Connectivity (Public vs Private Boundary)</span>
           </h3>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse text-xs font-mono">
             <thead>
-              <tr className="border-b border-white/[0.08] bg-[#0B1120] text-[11px] text-slate-400">
+              <tr className="border-b border-[#ff3555]/20 bg-[#120508] text-[11px] text-[#d4a5ac]">
                 <th className="py-3 px-4">Exchange</th>
                 <th className="py-3 px-3">Public WS</th>
                 <th className="py-3 px-3">Public REST</th>
@@ -161,33 +162,36 @@ export const SystemHealthView: React.FC<SystemHealthViewProps> = ({
       <div className="nq-panel rounded-xl p-4 space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
-            <Terminal className="w-4 h-4 text-[#8B5CF6]" />
+            <Terminal className="w-4 h-4 text-[#ff6375]" />
             <div>
-              <h3 className="text-sm font-semibold text-white">
+              <h3 className="text-sm font-semibold text-[#ffe3e5]">
                 FastAPI Integration Contract & VPS Deployment Spec
               </h3>
-              <p className="text-xs text-slate-400">
+              <p className="text-xs text-[#d4a5ac]">
                 Existing + proposed authenticated read-only endpoints, Caddy config, and rollback procedure.
               </p>
             </div>
           </div>
           <button
+            type="button"
             onClick={() => setShowIntegrationSpec(!showIntegrationSpec)}
-            className="px-3.5 py-2 min-h-[36px] rounded-lg bg-[#8B5CF6]/20 hover:bg-[#8B5CF6]/30 border border-[#8B5CF6]/40 text-white text-xs font-medium whitespace-nowrap shrink-0"
+            className="px-3.5 py-2 min-h-[36px] rounded-lg bg-[#ff3555]/15 hover:bg-[#ff3555]/25 border border-[#ff3555]/40 text-[#ffe3e5] text-xs font-medium whitespace-nowrap shrink-0"
           >
             {showIntegrationSpec ? 'Hide Integration Spec' : 'View Integration Spec'}
           </button>
         </div>
 
         {showIntegrationSpec && (
-          <div className="pt-3 border-t border-white/[0.08] space-y-4 text-xs font-mono text-slate-300">
+          <div className="pt-3 border-t border-[#ff3555]/20 space-y-4 text-xs font-mono text-[#f3c6cc]">
             <div>
-              <div className="text-[#00E5FF] font-semibold mb-1">1. Existing & Proposed Read-Only Endpoints (FastAPI)</div>
-              <pre className="p-3 rounded-lg bg-[#05080F] border border-white/[0.08] overflow-x-auto text-[11px] leading-relaxed">
+              <div className="text-[#ff6375] font-semibold mb-1">1. Existing & Proposed Read-Only Endpoints (FastAPI)</div>
+              <pre className="p-3 rounded-lg bg-[#080305] border border-[#ff3555]/20 overflow-x-auto text-[11px] leading-relaxed">
 {`# Existing Verified Read-Only Endpoints:
 GET /api/miniapp/state
 GET /api/miniapp/health
 GET /api/miniapp/candles/{exchange}/{market_type}/{base}/{quote}/{timeframe}
+GET /api/violet/research
+GET /api/violet/solana
 
 # Proposed New Authenticated Read-Only Endpoints (Additive Only):
 GET /api/miniapp/orders?exchange=all&status=all&limit=100
@@ -199,8 +203,8 @@ GET /api/miniapp/alerts?category=all&limit=50
             </div>
 
             <div>
-              <div className="text-[#00E5FF] font-semibold mb-1">2. Safe Ubuntu 24.04 VPS Build & Rollback Procedure</div>
-              <pre className="p-3 rounded-lg bg-[#05080F] border border-white/[0.08] overflow-x-auto text-[11px] leading-relaxed">
+              <div className="text-[#ff6375] font-semibold mb-1">2. Safe Ubuntu 24.04 VPS Build & Rollback Procedure</div>
+              <pre className="p-3 rounded-lg bg-[#080305] border border-[#ff3555]/20 overflow-x-auto text-[11px] leading-relaxed">
 {`# Backup existing miniapp static bundle before deploying V3:
 cp -a /root/multi-exchange-paper/miniapp_dist /root/multi-exchange-paper/miniapp_dist.bak.$(date +%s)
 

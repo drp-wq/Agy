@@ -100,8 +100,8 @@ export const GlobalOverviewView: React.FC<GlobalOverviewViewProps> = ({
         </div>
 
         <div className="nq-panel rounded-xl p-4">
-          <div className="text-xs text-slate-400">Margin Reserved / Notional</div>
-          <div className="text-2xl font-mono font-bold text-[#00E5FF] mt-1">
+          <div className="text-xs text-[#d4a5ac]">Margin Reserved / Notional</div>
+          <div className="text-2xl font-mono font-bold text-[#ff6375] mt-1">
             {formatUsd(exposureSummary.reservedMarginUsd)}
           </div>
           <div className="text-[11px] font-mono text-slate-400 mt-1.5">
@@ -212,14 +212,15 @@ export const GlobalOverviewView: React.FC<GlobalOverviewViewProps> = ({
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
         {/* Open Paper Futures Snapshot */}
         <div className="nq-panel rounded-xl p-4 flex flex-col">
-          <div className="flex items-center justify-between pb-3 border-b border-white/[0.08]">
+          <div className="flex items-center justify-between pb-3 border-b border-[#ff3555]/20">
             <div className="flex items-center gap-2">
-              <Activity className="w-4 h-4 text-[#00E5FF]" />
-              <h3 className="font-display font-semibold text-sm text-white">Open Paper Futures Positions</h3>
+              <Activity className="w-4 h-4 text-[#ff6375]" />
+              <h3 className="font-display font-semibold text-sm text-[#ffe3e5]">Open Paper Futures Positions</h3>
             </div>
             <button
+              type="button"
               onClick={() => onNavigate('positions')}
-              className="text-xs text-[#00E5FF] hover:underline whitespace-nowrap shrink-0"
+              className="text-xs text-[#ff6375] hover:underline whitespace-nowrap shrink-0"
             >
               Open Positions Terminal →
             </button>
@@ -267,22 +268,23 @@ export const GlobalOverviewView: React.FC<GlobalOverviewViewProps> = ({
 
         {/* Approved Strategy Opportunities */}
         <div className="nq-panel rounded-xl p-4 flex flex-col">
-          <div className="flex items-center justify-between pb-3 border-b border-white/[0.08]">
+          <div className="flex items-center justify-between pb-3 border-b border-[#ff3555]/20">
             <div className="flex items-center gap-2">
               <TrendingUp className="w-4 h-4 text-[#10B981]" />
-              <h3 className="font-display font-semibold text-sm text-white">Approved Opportunity Setups</h3>
+              <h3 className="font-display font-semibold text-sm text-[#ffe3e5]">Approved Opportunity Setups</h3>
             </div>
             <button
+              type="button"
               onClick={() => onNavigate('opportunities')}
-              className="text-xs text-[#00E5FF] hover:underline whitespace-nowrap shrink-0"
+              className="text-xs text-[#ff6375] hover:underline whitespace-nowrap shrink-0"
             >
               View All Screening →
             </button>
           </div>
 
-          <div className="divide-y divide-white/[0.06] mt-1">
+          <div className="divide-y divide-[#ff3555]/15 mt-1">
             {approvedOpportunities.length === 0 ? (
-              <div className="py-6 text-center text-xs text-slate-400">
+              <div className="py-6 text-center text-xs text-[#d4a5ac]">
                 No APPROVED setups in the current scanner cycle. Inspect Screening for watchlist candidates.
               </div>
             ) : (
@@ -293,20 +295,21 @@ export const GlobalOverviewView: React.FC<GlobalOverviewViewProps> = ({
                     <span className={`font-semibold uppercase ${EXCHANGE_META[opp.exchange].accentText}`}>
                       {opp.exchange}
                     </span>
-                    <span className="text-white font-semibold">{opp.symbol}</span>
-                    <span className="text-slate-400">{opp.confirmed.regime.replace(/_/g, ' ')}</span>
+                    <span className="text-[#ffe3e5] font-semibold">{opp.symbol}</span>
+                    <span className="text-[#d4a5ac]">{opp.confirmed.regime.replace(/_/g, ' ')}</span>
                   </div>
-                  <div className="text-[11px] font-mono text-slate-400 mt-0.5">
+                  <div className="text-[11px] font-mono text-[#d4a5ac] mt-0.5">
                     {opp.estimates.strategy_name} · Est. R:R {opp.estimates.risk_reward_ratio.toFixed(2)} · Conf {opp.estimates.confidence_pct}%
                   </div>
                 </div>
                 <button
+                  type="button"
                   onClick={() => {
                     setChartExchange(opp.exchange);
                     setChartMarket(opp.market_type);
                     setChartSymbol(opp.symbol);
                   }}
-                  className="px-3 py-1.5 min-h-[34px] rounded-lg bg-[#00E5FF]/10 hover:bg-[#00E5FF]/20 border border-[#00E5FF]/30 text-[#00E5FF] text-xs font-medium whitespace-nowrap shrink-0 transition-colors"
+                  className="px-3 py-1.5 min-h-[34px] rounded-lg bg-[#ff3555]/15 hover:bg-[#ff3555]/25 border border-[#ff3555]/40 text-[#ffe3e5] text-xs font-medium whitespace-nowrap shrink-0 transition-colors"
                 >
                   Load Chart
                 </button>

@@ -63,10 +63,11 @@ export const PaperOrdersView: React.FC<PaperOrdersViewProps> = ({ state }) => {
         subtitle="Simulated order lifecycle, fee accounting, and slippage telemetry across exchanges"
         actions={
           <button
+            type="button"
             onClick={handleExportCsv}
-            className="px-3.5 py-2 min-h-[38px] rounded-lg bg-[#00E5FF]/15 hover:bg-[#00E5FF]/25 border border-[#00E5FF]/35 text-[#00E5FF] text-xs font-medium flex items-center gap-1.5 whitespace-nowrap shrink-0 transition-colors"
+            className="px-3.5 py-2 min-h-[38px] rounded-lg bg-[#ff3555]/15 hover:bg-[#ff3555]/25 border border-[#ff3555]/45 text-[#ffe3e5] text-xs font-medium flex items-center gap-1.5 whitespace-nowrap shrink-0 transition-colors"
           >
-            <Download className="w-3.5 h-3.5" />
+            <Download className="w-3.5 h-3.5 text-[#ff6375]" />
             <span>Export CSV</span>
           </button>
         }
@@ -99,13 +100,14 @@ export const PaperOrdersView: React.FC<PaperOrdersViewProps> = ({ state }) => {
 
       {/* Filters */}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center p-1 rounded-lg bg-[#0B1120] border border-white/[0.08]">
+        <div className="flex items-center p-1 rounded-lg bg-[#120508] border border-[#ff3555]/25">
           {(['all', 'binance', 'bybit', 'okx'] as const).map((ex) => (
             <button
               key={ex}
+              type="button"
               onClick={() => setExchangeFilter(ex)}
               className={`px-3 py-1.5 min-h-[34px] rounded-md text-xs font-medium uppercase whitespace-nowrap shrink-0 ${
-                exchangeFilter === ex ? 'bg-[#00E5FF]/20 text-[#00E5FF]' : 'text-slate-400 hover:text-white'
+                exchangeFilter === ex ? 'bg-[#ff3555]/25 text-[#ffe3e5]' : 'text-[#d4a5ac] hover:text-[#ffe3e5]'
               }`}
             >
               {ex}
@@ -113,13 +115,14 @@ export const PaperOrdersView: React.FC<PaperOrdersViewProps> = ({ state }) => {
           ))}
         </div>
 
-        <div className="flex items-center p-1 rounded-lg bg-[#0B1120] border border-white/[0.08]">
+        <div className="flex items-center p-1 rounded-lg bg-[#120508] border border-[#ff3555]/25">
           {(['ALL', 'OPEN', 'FILLED', 'REJECTED'] as const).map((st) => (
             <button
               key={st}
+              type="button"
               onClick={() => setStatusFilter(st)}
               className={`px-3 py-1.5 min-h-[34px] rounded-md text-xs font-medium whitespace-nowrap shrink-0 ${
-                statusFilter === st ? 'bg-[#8B5CF6]/25 text-white' : 'text-slate-400 hover:text-white'
+                statusFilter === st ? 'bg-[#ff3555]/25 text-[#ffe3e5]' : 'text-[#d4a5ac] hover:text-[#ffe3e5]'
               }`}
             >
               {st}
@@ -143,7 +146,7 @@ export const PaperOrdersView: React.FC<PaperOrdersViewProps> = ({ state }) => {
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse text-xs font-mono">
               <thead>
-                <tr className="border-b border-white/[0.08] bg-[#0B1120] text-[11px] text-slate-400">
+                <tr className="border-b border-[#ff3555]/20 bg-[#120508] text-[11px] text-[#d4a5ac]">
                   <th className="py-3 px-4">Order ID / Time</th>
                   <th className="py-3 px-3">Exchange / Pair</th>
                   <th className="py-3 px-3">Side / Type</th>
@@ -177,7 +180,7 @@ export const PaperOrdersView: React.FC<PaperOrdersViewProps> = ({ state }) => {
                           ord.status === 'FILLED'
                             ? 'text-[#10B981]'
                             : ord.status === 'OPEN'
-                            ? 'text-[#00E5FF]'
+                            ? 'text-[#ff6375]'
                             : ord.status === 'REJECTED'
                             ? 'text-[#EF4444]'
                             : 'text-slate-400'

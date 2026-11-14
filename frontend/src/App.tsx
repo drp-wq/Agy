@@ -2,6 +2,7 @@ import { DiagnosticsPanel } from './components/workspaces/DiagnosticsPanel';
 import React, { useState, useEffect, useCallback, useRef, Suspense, lazy } from 'react';
 import {
   LayoutDashboard,
+  Cpu,
   Radar,
   Target,
   Layers,
@@ -36,6 +37,9 @@ import {
 
 const GlobalOverviewView = lazy(() =>
   import('./components/workspaces/GlobalOverviewView').then((m) => ({ default: m.GlobalOverviewView }))
+);
+const SolanaResearchView = lazy(() =>
+  import('./components/workspaces/SolanaResearchView').then((m) => ({ default: m.SolanaResearchView }))
 );
 const MarketScannerView = lazy(() =>
   import('./components/workspaces/MarketScannerView').then((m) => ({ default: m.MarketScannerView }))
@@ -84,6 +88,7 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   { id: 'overview', label: 'Global Overview', shortLabel: 'Overview', group: 'Core Terminal', icon: LayoutDashboard },
+  { id: 'solana', label: 'Solana Research', shortLabel: 'Solana', group: 'Core Terminal', icon: Cpu },
   { id: 'scanner', label: 'Market Scanner', shortLabel: 'Scanner', group: 'Core Terminal', icon: Radar },
   { id: 'opportunities', label: 'Trading Opportunities', shortLabel: 'Opportunities', group: 'Core Terminal', icon: Target },
   { id: 'binance', label: 'Binance Workspace', shortLabel: 'Binance', group: 'Exchange Workspaces', icon: Layers },
@@ -188,11 +193,38 @@ export default function App() {
     };
   }, [fetchAll]);
 
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setMobileMenuOpen(false);
+        setInspectedPosition(null);
+        setInspectedChartOpp(null);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
   const handleSelectSection = (id: NavSectionId) => {
     telegram.hapticSelection();
     setActiveSection(id);
     setMobileMenuOpen(false);
     window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleTabKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>, currentIndex: number) => {
+    let nextIndex: number | null = null;
+    if (e.key === 'ArrowRight') nextIndex = (currentIndex + 1) % NAV_ITEMS.length;
+    else if (e.key === 'ArrowLeft') nextIndex = (currentIndex - 1 + NAV_ITEMS.length) % NAV_ITEMS.length;
+    else if (e.key === 'Home') nextIndex = 0;
+    else if (e.key === 'End') nextIndex = NAV_ITEMS.length - 1;
+    if (nextIndex !== null) {
+      e.preventDefault();
+      handleSelectSection(NAV_ITEMS[nextIndex].id);
+      const container = e.currentTarget.parentElement;
+      const buttons = container?.querySelectorAll<HTMLButtonElement>('button[role="tab"]');
+      buttons?.[nextIndex]?.focus();
+    }
   };
 
   const handleInspectOpportunityChart = (opp: MarketOpportunity) => {
@@ -209,22 +241,24 @@ export default function App() {
   const dataAgeSec = state ? Math.max(0, Math.floor(Date.now() / 1000) - state.generated_at) : 0;
 
   return (
-    <div className="min-h-screen bg-[#05080F] text-[#E2E8F0] flex flex-col lg:flex-row pt-safe">
+    <div className="min-h-screen bg-[#080305] text-[#ffe3e5] flex flex-col lg:flex-row pt-safe">
       {/* DESKTOP SIDEBAR (lg+) */}
-      <aside className="hidden lg:flex lg:flex-col lg:w-64 lg:fixed lg:inset-y-0 bg-[#080D1A] border-r border-white/[0.08] z-30">
+      <aside className="hidden lg:flex lg:flex-col lg:w-64 lg:fixed lg:inset-y-0 bg-[#120508] border-r border-[#ff3555]/25 z-30">
         {/* Brand */}
-        <div className="px-5 py-4 border-b border-white/[0.08] flex items-center justify-between">
-          <span className="font-display font-bold text-base tracking-tight text-white whitespace-nowrap shrink-0">
-            AURORA V7
+        <div className="px-5 py-4 border-b border-[#ff3555]/20 flex items-center justify-between gap-2">
+          <span className="font-display font-bold text-sm tracking-wide text-[#ffe3e5] whitespace-nowrap shrink-0">
+            VIOLET // SCARLET
           </span>
-          <span className="text-[10px] font-mono text-[#10B981]">PAPER</span>
+          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-[#10b981]/15 border border-[#10b981]/35 text-[#10b981]">
+            PAPER
+          </span>
         </div>
 
         {/* Navigation Groups */}
         <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-5" aria-label="Main Terminal Navigation">
           {NAV_GROUPS.map((group) => (
             <div key={group}>
-              <div className="px-3 mb-1.5 text-[11px] font-medium text-slate-500">
+              <div className="px-3 mb-1.5 text-[11px] font-mono uppercase tracking-wider text-[#b8868e]">
                 {group}
               </div>
               <div className="space-y-0.5">
@@ -234,14 +268,16 @@ export default function App() {
                   return (
                     <button
                       key={item.id}
+                      type="button"
                       onClick={() => handleSelectSection(item.id)}
+                      aria-current={isActive ? 'page' : undefined}
                       className={`w-full px-3 py-2 min-h-[40px] rounded-lg text-xs font-medium flex items-center gap-2.5 transition-colors whitespace-nowrap ${
                         isActive
-                          ? 'bg-[#00E5FF]/15 text-[#00E5FF]'
-                          : 'text-slate-400 hover:text-white hover:bg-white/[0.04]'
+                          ? 'bg-[#ff3555]/20 text-[#ffe3e5] border border-[#ff3555]/45 shadow-[0_0_16px_rgba(255,53,85,0.18)]'
+                          : 'text-[#d4a5ac] hover:text-[#ffe3e5] hover:bg-[#ff3555]/10 border border-transparent'
                       }`}
                     >
-                      <Icon className="w-4 h-4 shrink-0" />
+                      <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-[#ff6375]' : ''}`} />
                       <span className="truncate">{item.label}</span>
                     </button>
                   );
@@ -252,8 +288,8 @@ export default function App() {
         </nav>
 
         {/* Sidebar Security & Owner Context */}
-        <div className="p-4 border-t border-white/[0.08] text-[11px] font-mono text-slate-400 space-y-1">
-          <div className="text-slate-300 truncate">
+        <div className="p-4 border-t border-[#ff3555]/20 text-[11px] font-mono text-[#d4a5ac] space-y-1">
+          <div className="text-[#ffe3e5] truncate">
             {telegram.user?.username && telegram.initData && !authError
               ? `@${telegram.user.username}`
               : isDemo
@@ -266,28 +302,28 @@ export default function App() {
                       ? 'Authenticated Paper Session'
                       : 'Verifying Session'}
           </div>
-          <div className="text-[#10B981]">Live Execution Blocked</div>
+          <div className="text-[#10b981]">Live Execution Blocked</div>
         </div>
       </aside>
 
       {/* MAIN WORKSPACE COLUMN */}
       <div className="flex-1 lg:pl-64 flex flex-col min-w-0">
         {/* TOP BAR (Strict 3-Zone Contract: Title/Breadcrumb — Status — 1 Primary Action) */}
-        <header className="sticky top-0 z-30 bg-[#05080F]/90 backdrop-blur-md border-b border-white/[0.08] px-4 lg:px-8 h-14 flex items-center justify-between gap-4">
+        <header className="sticky top-0 z-30 bg-[#080305]/92 backdrop-blur-md border-b border-[#ff3555]/25 px-4 lg:px-8 h-14 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3 min-w-0">
-            <span className="lg:hidden font-display font-bold text-sm text-white whitespace-nowrap shrink-0">
-              NEON QUANT
+            <span className="lg:hidden font-display font-bold text-sm text-[#ffe3e5] whitespace-nowrap shrink-0">
+              VIOLET // SCARLET
             </span>
-            <span className="lg:hidden text-slate-600">/</span>
-            <span className="text-xs sm:text-sm font-medium text-slate-200 truncate">
+            <span className="lg:hidden text-[#ff3555]/60">/</span>
+            <span className="text-xs sm:text-sm font-medium text-[#ffe3e5] truncate">
               {activeNavMeta.label}
             </span>
           </div>
 
-          <div className="hidden md:flex items-center gap-2 text-xs font-mono text-slate-400 whitespace-nowrap shrink-0">
+          <div className="hidden md:flex items-center gap-2 text-xs font-mono text-[#d4a5ac] whitespace-nowrap shrink-0">
             <span
               className={`w-2 h-2 rounded-full ${
-                authError ? 'bg-[#EF4444]' : fetchError || !state ? 'bg-amber-400' : isDemo ? 'bg-[#8B5CF6]' : 'bg-[#10B981]'
+                authError ? 'bg-[#ef4444]' : fetchError || !state ? 'bg-[#ffb16c]' : isDemo ? 'bg-[#ff6375]' : 'bg-[#10b981]'
               }`}
             />
             <span>{authError ? 'Auth Required' : fetchError ? 'Sync Failed' : !state ? 'Connecting…' : isDemo ? 'DEMO Mode' : 'FastAPI Synced'}</span>
@@ -295,28 +331,37 @@ export default function App() {
 
           <div className="flex items-center gap-2 shrink-0">
             <button
+              type="button"
               onClick={() => fetchAll(false)}
               disabled={refreshing}
-              className="px-3.5 py-2 min-h-[38px] rounded-lg bg-[#00E5FF]/15 hover:bg-[#00E5FF]/25 border border-[#00E5FF]/35 text-[#00E5FF] text-xs font-medium flex items-center gap-1.5 whitespace-nowrap shrink-0 transition-colors"
+              className="px-3.5 py-2 min-h-[38px] rounded-lg bg-[#ff3555]/15 hover:bg-[#ff3555]/25 border border-[#ff3555]/45 text-[#ffe3e5] text-xs font-medium flex items-center gap-1.5 whitespace-nowrap shrink-0 transition-colors"
             >
-              <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
+              <RefreshCw className={`w-3.5 h-3.5 text-[#ff6375] ${refreshing ? 'animate-spin' : ''}`} />
               <span>Sync Telemetry</span>
             </button>
           </div>
         </header>
 
         {/* IPAD COMPACT HORIZONTAL TAB BAR (md to lg) */}
-        <div className="hidden md:flex lg:hidden border-b border-white/[0.08] bg-[#080D1A] px-4 py-2 overflow-x-auto no-scrollbar gap-1.5">
-          {NAV_ITEMS.map((item) => {
+        <div
+          role="tablist"
+          aria-label="Workspace Tabs"
+          className="hidden md:flex lg:hidden border-b border-[#ff3555]/20 bg-[#120508] px-4 py-2 overflow-x-auto no-scrollbar gap-1.5"
+        >
+          {NAV_ITEMS.map((item, idx) => {
             const isActive = activeSection === item.id;
             return (
               <button
                 key={item.id}
+                type="button"
+                role="tab"
+                aria-selected={isActive}
                 onClick={() => handleSelectSection(item.id)}
+                onKeyDown={(e) => handleTabKeyDown(e, idx)}
                 className={`px-3 py-1.5 min-h-[36px] rounded-lg text-xs font-medium whitespace-nowrap shrink-0 transition-colors ${
                   isActive
-                    ? 'bg-[#00E5FF]/20 text-[#00E5FF]'
-                    : 'text-slate-400 hover:text-white hover:bg-white/[0.04]'
+                    ? 'bg-[#ff3555]/25 text-[#ffe3e5] border border-[#ff3555]/45'
+                    : 'text-[#d4a5ac] hover:text-[#ffe3e5] hover:bg-[#ff3555]/10 border border-transparent'
                 }`}
               >
                 {item.shortLabel}
@@ -328,7 +373,7 @@ export default function App() {
         {/* MAIN CONTENT AREA */}
         <main className="flex-1 px-4 lg:px-8 py-6 pb-24 md:pb-10 max-w-[1440px] w-full mx-auto space-y-6">
           {/* Stale / Demo Warning Banner */}
-          {state && !authError && (
+          {state && !authError && activeSection !== 'solana' && (
             <StaleWarningStrip
               ageSec={dataAgeSec}
               isDemo={isDemo}
@@ -337,104 +382,117 @@ export default function App() {
           )}
 
           {/* Auth Error State */}
-          {authError && <AuthErrorBanner message={authError} onRetry={() => fetchAll(false)} />}
+          {authError && activeSection !== 'solana' && (
+            <AuthErrorBanner message={authError} onRetry={() => fetchAll(false)} />
+          )}
 
           {/* Generic Network Error State */}
-          {fetchError && !authError && !state && (
-            <div className="nq-panel rounded-xl p-6 border border-[#EF4444]/35 text-xs space-y-3">
-              <div className="text-sm font-semibold text-[#EF4444]">Backend Telemetry Unreachable</div>
-              <p className="text-slate-300">{fetchError}</p>
+          {fetchError && !authError && !state && activeSection !== 'solana' && (
+            <div className="nq-panel rounded-xl p-6 border border-[#ef4444]/45 text-xs space-y-3">
+              <div className="text-sm font-semibold text-[#ff6375]">Backend Telemetry Unreachable</div>
+              <p className="text-[#f3c6cc]">{fetchError}</p>
               <button
+                type="button"
                 onClick={() => fetchAll(false)}
-                className="px-4 py-2 rounded-lg bg-[#00E5FF]/15 border border-[#00E5FF]/35 text-[#00E5FF] font-medium"
+                className="px-4 py-2 rounded-lg bg-[#ff3555]/20 border border-[#ff3555]/45 text-[#ffe3e5] font-medium"
               >
                 Retry Connection
               </button>
             </div>
           )}
 
-          {fetchError && !authError && state && (
-            <div className="mb-4 px-4 py-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-xs text-amber-200 flex items-center justify-between gap-3">
+          {fetchError && !authError && state && activeSection !== 'solana' && (
+            <div className="mb-4 px-4 py-2.5 rounded-xl bg-[#ffb16c]/10 border border-[#ffb16c]/35 text-xs text-[#ffd7b3] flex items-center justify-between gap-3">
               <span>Telemetry refresh warning: {fetchError}. Showing last synchronized snapshot.</span>
               <button
+                type="button"
                 onClick={() => fetchAll(false)}
-                className="px-2.5 py-1 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-100 whitespace-nowrap shrink-0"
+                className="px-2.5 py-1 rounded bg-[#ffb16c]/20 hover:bg-[#ffb16c]/30 text-[#ffe3e5] whitespace-nowrap shrink-0"
               >
                 Retry
               </button>
             </div>
           )}
 
-          {/* Loading Skeleton */}
-          {loading && !state && <LoadingTerminalSkeleton />}
-
-          {/* Active Workspace Render */}
-          {state && !authError && (
-            <>
-            {['system', 'orders', 'analytics', 'scanner', 'opportunities', 'risk'].includes(activeSection) &&
-              <DiagnosticsPanel section={activeSection} initData={telegram.initData} />}
+          {/* Independent Solana Research Workspace */}
+          {activeSection === 'solana' && (
             <Suspense fallback={<LoadingTerminalSkeleton />}>
-              {activeSection === 'overview' && (
-                <GlobalOverviewView
-                  state={state}
-                  initData={telegram.initData}
-                  onNavigate={handleSelectSection}
-                  onInspectPosition={setInspectedPosition}
-                />
-              )}
-              {activeSection === 'scanner' && (
-                <MarketScannerView
-                  state={state}
-                  onInspectOpportunityChart={handleInspectOpportunityChart}
-                />
-              )}
-              {activeSection === 'opportunities' && (
-                <OpportunitiesView
-                  state={state}
-                  onInspectChart={handleInspectOpportunityChart}
-                />
-              )}
-              {activeSection === 'binance' && (
-                <ExchangeWorkspaceView
-                  exchange="binance"
-                  state={state}
-                  initData={telegram.initData}
-                  onInspectPosition={setInspectedPosition}
-                />
-              )}
-              {activeSection === 'bybit' && (
-                <ExchangeWorkspaceView
-                  exchange="bybit"
-                  state={state}
-                  initData={telegram.initData}
-                  onInspectPosition={setInspectedPosition}
-                />
-              )}
-              {activeSection === 'okx' && (
-                <ExchangeWorkspaceView
-                  exchange="okx"
-                  state={state}
-                  initData={telegram.initData}
-                  onInspectPosition={setInspectedPosition}
-                />
-              )}
-              {activeSection === 'positions' && (
-                <PositionsTerminalView
-                  state={state}
-                  onInspectPosition={setInspectedPosition}
-                />
-              )}
-              {activeSection === 'orders' && <PaperOrdersView state={state} />}
-              {activeSection === 'analytics' && <PortfolioAnalyticsView state={state} />}
-              {activeSection === 'risk' && <RiskCommandView state={state} health={health} />}
-              {activeSection === 'treasury' && <TreasuryAuditView state={state} />}
-              {activeSection === 'alerts' && <TelegramAlertsView state={state} telegram={telegram} />}
-              {activeSection === 'system' && (
-                <SystemHealthView health={health} isDemo={isDemo} onRefresh={() => fetchAll(false)} />
-              )}
-
+              <SolanaResearchView initData={telegram.initData} />
               <ReadOnlySecurityFooterNotice />
             </Suspense>
+          )}
+
+          {/* Loading Skeleton */}
+          {activeSection !== 'solana' && loading && !state && <LoadingTerminalSkeleton />}
+
+          {/* Active Crypto Workspace Render */}
+          {activeSection !== 'solana' && state && !authError && (
+            <>
+              {['system', 'orders', 'analytics', 'scanner', 'opportunities', 'risk'].includes(activeSection) && (
+                <DiagnosticsPanel section={activeSection} initData={telegram.initData} />
+              )}
+              <Suspense fallback={<LoadingTerminalSkeleton />}>
+                {activeSection === 'overview' && (
+                  <GlobalOverviewView
+                    state={state}
+                    initData={telegram.initData}
+                    onNavigate={handleSelectSection}
+                    onInspectPosition={setInspectedPosition}
+                  />
+                )}
+                {activeSection === 'scanner' && (
+                  <MarketScannerView
+                    state={state}
+                    onInspectOpportunityChart={handleInspectOpportunityChart}
+                  />
+                )}
+                {activeSection === 'opportunities' && (
+                  <OpportunitiesView
+                    state={state}
+                    onInspectChart={handleInspectOpportunityChart}
+                  />
+                )}
+                {activeSection === 'binance' && (
+                  <ExchangeWorkspaceView
+                    exchange="binance"
+                    state={state}
+                    initData={telegram.initData}
+                    onInspectPosition={setInspectedPosition}
+                  />
+                )}
+                {activeSection === 'bybit' && (
+                  <ExchangeWorkspaceView
+                    exchange="bybit"
+                    state={state}
+                    initData={telegram.initData}
+                    onInspectPosition={setInspectedPosition}
+                  />
+                )}
+                {activeSection === 'okx' && (
+                  <ExchangeWorkspaceView
+                    exchange="okx"
+                    state={state}
+                    initData={telegram.initData}
+                    onInspectPosition={setInspectedPosition}
+                  />
+                )}
+                {activeSection === 'positions' && (
+                  <PositionsTerminalView
+                    state={state}
+                    onInspectPosition={setInspectedPosition}
+                  />
+                )}
+                {activeSection === 'orders' && <PaperOrdersView state={state} />}
+                {activeSection === 'analytics' && <PortfolioAnalyticsView state={state} />}
+                {activeSection === 'risk' && <RiskCommandView state={state} health={health} />}
+                {activeSection === 'treasury' && <TreasuryAuditView state={state} />}
+                {activeSection === 'alerts' && <TelegramAlertsView state={state} telegram={telegram} />}
+                {activeSection === 'system' && (
+                  <SystemHealthView health={health} isDemo={isDemo} onRefresh={() => fetchAll(false)} />
+                )}
+
+                <ReadOnlySecurityFooterNotice />
+              </Suspense>
             </>
           )}
         </main>
@@ -443,11 +501,12 @@ export default function App() {
       {/* MOBILE / TELEGRAM MINI APP FIXED BOTTOM NAVIGATION (< md, <= 15% sticky cap, pb-safe) */}
       <nav
         aria-label="Mobile Bottom Navigation"
-        className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#080D1A]/95 backdrop-blur-md border-t border-white/[0.1] pb-safe"
+        className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#120508]/95 backdrop-blur-md border-t border-[#ff3555]/25 pb-safe"
       >
-        <div className="grid grid-cols-4 h-14 items-center">
+        <div className="grid grid-cols-5 h-14 items-center">
           {[
             { id: 'overview' as NavSectionId, label: 'Overview', icon: LayoutDashboard },
+            { id: 'solana' as NavSectionId, label: 'Solana', icon: Cpu },
             { id: 'scanner' as NavSectionId, label: 'Scanner', icon: Radar },
             { id: 'positions' as NavSectionId, label: 'Positions', icon: Briefcase }
           ].map((tab) => {
@@ -456,9 +515,11 @@ export default function App() {
             return (
               <button
                 key={tab.id}
+                type="button"
                 onClick={() => handleSelectSection(tab.id)}
+                aria-current={isActive ? 'page' : undefined}
                 className={`min-h-[44px] flex flex-col items-center justify-center gap-0.5 text-[10px] font-medium transition-colors ${
-                  isActive ? 'text-[#00E5FF]' : 'text-slate-400'
+                  isActive ? 'text-[#ff6375]' : 'text-[#d4a5ac]'
                 }`}
               >
                 <Icon className="w-4 h-4" />
@@ -468,32 +529,38 @@ export default function App() {
           })}
 
           <button
+            type="button"
             onClick={() => setMobileMenuOpen(true)}
+            aria-expanded={mobileMenuOpen}
             className={`min-h-[44px] flex flex-col items-center justify-center gap-0.5 text-[10px] font-medium transition-colors ${
-              mobileMenuOpen ? 'text-[#00E5FF]' : 'text-slate-400'
+              mobileMenuOpen ? 'text-[#ff6375]' : 'text-[#d4a5ac]'
             }`}
           >
             <Menu className="w-4 h-4" />
-            <span>Workspaces</span>
+            <span>More</span>
           </button>
         </div>
       </nav>
 
-      {/* MOBILE ALL-12 WORKSPACES BOTTOM SHEET */}
+      {/* MOBILE ALL WORKSPACES BOTTOM SHEET */}
       {mobileMenuOpen && (
         <div
-          className="md:hidden fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-end"
+          className="md:hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end"
           onClick={() => setMobileMenuOpen(false)}
         >
           <div
-            className="w-full bg-[#0B1120] border-t border-white/[0.12] rounded-t-2xl p-4 pb-safe max-h-[82vh] overflow-y-auto space-y-4"
+            role="dialog"
+            aria-modal="true"
+            aria-label="All Terminal Workspaces"
+            className="w-full bg-[#120508] border-t border-[#ff3555]/35 rounded-t-2xl p-4 pb-safe max-h-[82vh] overflow-y-auto space-y-4"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between pb-2 border-b border-white/[0.08]">
-              <span className="font-display font-semibold text-sm text-white">All Terminal Workspaces</span>
+            <div className="flex items-center justify-between pb-2 border-b border-[#ff3555]/20">
+              <span className="font-display font-semibold text-sm text-[#ffe3e5]">All Terminal Workspaces</span>
               <button
+                type="button"
                 onClick={() => setMobileMenuOpen(false)}
-                className="p-2 min-h-[44px] min-w-[44px] flex items-center justify-center text-slate-400 hover:text-white"
+                className="p-2 min-h-[44px] min-w-[44px] flex items-center justify-center text-[#d4a5ac] hover:text-[#ffe3e5]"
                 aria-label="Close workspace drawer"
               >
                 <X className="w-4 h-4" />
@@ -502,7 +569,7 @@ export default function App() {
 
             {NAV_GROUPS.map((group) => (
               <div key={group} className="space-y-1">
-                <div className="text-[11px] font-medium text-slate-500 px-1">{group}</div>
+                <div className="text-[11px] font-mono uppercase text-[#b8868e] px-1">{group}</div>
                 <div className="grid grid-cols-2 gap-2">
                   {NAV_ITEMS.filter((i) => i.group === group).map((item) => {
                     const Icon = item.icon;
@@ -510,18 +577,20 @@ export default function App() {
                     return (
                       <button
                         key={item.id}
+                        type="button"
                         onClick={() => handleSelectSection(item.id)}
+                        aria-current={isActive ? 'page' : undefined}
                         className={`min-h-[44px] px-3 py-2 rounded-xl border text-left text-xs font-medium flex items-center justify-between transition-colors ${
                           isActive
-                            ? 'bg-[#00E5FF]/15 border-[#00E5FF]/40 text-[#00E5FF]'
-                            : 'bg-[#05080F] border-white/[0.08] text-slate-300'
+                            ? 'bg-[#ff3555]/20 border-[#ff3555]/50 text-[#ffe3e5]'
+                            : 'bg-[#080305] border-[#ff3555]/20 text-[#d4a5ac]'
                         }`}
                       >
                         <span className="flex items-center gap-2 truncate">
-                          <Icon className="w-3.5 h-3.5 shrink-0" />
+                          <Icon className={`w-3.5 h-3.5 shrink-0 ${isActive ? 'text-[#ff6375]' : ''}`} />
                           <span className="truncate">{item.shortLabel}</span>
                         </span>
-                        <ChevronRight className="w-3 h-3 text-slate-500 shrink-0" />
+                        <ChevronRight className="w-3 h-3 text-[#b8868e] shrink-0" />
                       </button>
                     );
                   })}
@@ -556,16 +625,20 @@ export default function App() {
           onClick={() => setInspectedChartOpp(null)}
         >
           <div
-            className="w-full max-w-5xl bg-[#0B1120] border border-white/[0.15] rounded-2xl overflow-hidden shadow-2xl"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Market Chart Inspector"
+            className="w-full max-w-5xl bg-[#120508] border border-[#ff3555]/35 rounded-2xl overflow-hidden shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="px-4 py-3 border-b border-white/[0.08] flex items-center justify-between">
-              <div className="text-sm font-display font-semibold text-white">
+            <div className="px-4 py-3 border-b border-[#ff3555]/20 flex items-center justify-between">
+              <div className="text-sm font-display font-semibold text-[#ffe3e5]">
                 {inspectedChartOpp.exchange.toUpperCase()} · {inspectedChartOpp.symbol} ({inspectedChartOpp.marketType.toUpperCase()})
               </div>
               <button
+                type="button"
                 onClick={() => setInspectedChartOpp(null)}
-                className="p-2 min-h-[38px] min-w-[38px] flex items-center justify-center rounded-lg text-slate-400 hover:text-white hover:bg-white/5"
+                className="p-2 min-h-[38px] min-w-[38px] flex items-center justify-center rounded-lg text-[#d4a5ac] hover:text-[#ffe3e5] hover:bg-[#ff3555]/10"
                 aria-label="Close chart modal"
               >
                 <X className="w-4 h-4" />

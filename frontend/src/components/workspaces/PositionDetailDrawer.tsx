@@ -26,24 +26,24 @@ export const PositionDetailDrawer: React.FC<PositionDetailDrawerProps> = ({
       width: container.clientWidth,
       height: 150,
       layout: {
-        background: { type: ColorType.Solid, color: '#05080F' },
-        textColor: '#94A3B8',
+        background: { type: ColorType.Solid, color: '#080305' },
+        textColor: '#d4a5ac',
         fontFamily: "'JetBrains Mono', monospace",
         fontSize: 10
       },
       grid: {
-        vertLines: { color: 'rgba(148, 163, 184, 0.05)' },
-        horzLines: { color: 'rgba(148, 163, 184, 0.05)' }
+        vertLines: { color: 'rgba(255, 53, 85, 0.06)' },
+        horzLines: { color: 'rgba(255, 53, 85, 0.06)' }
       },
-      rightPriceScale: { borderColor: 'rgba(148, 163, 184, 0.14)' },
-      timeScale: { borderColor: 'rgba(148, 163, 184, 0.14)', timeVisible: true }
+      rightPriceScale: { borderColor: 'rgba(255, 53, 85, 0.2)' },
+      timeScale: { borderColor: 'rgba(255, 53, 85, 0.2)', timeVisible: true }
     });
 
     const isPositive = position.unrealized_pnl_usd >= 0;
     const area = chart.addSeries(AreaSeries, {
       lineColor: isPositive ? '#10B981' : '#EF4444',
       topColor: isPositive ? 'rgba(16, 185, 129, 0.28)' : 'rgba(239, 68, 68, 0.28)',
-      bottomColor: 'rgba(5, 8, 15, 0.0)',
+      bottomColor: 'rgba(8, 3, 5, 0.0)',
       lineWidth: 2
     });
 
@@ -69,7 +69,10 @@ export const PositionDetailDrawer: React.FC<PositionDetailDrawerProps> = ({
       onClick={onClose}
     >
       <div
-        className="w-full md:max-w-md bg-[#0B1120] border-t md:border-t-0 md:border-l border-white/[0.12] rounded-t-2xl md:rounded-none p-5 pb-safe max-h-[88vh] md:max-h-full overflow-y-auto flex flex-col justify-between gap-5"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Position details"
+        className="w-full md:max-w-md bg-[#120508] border-t md:border-t-0 md:border-l border-[#ff3555]/30 rounded-t-2xl md:rounded-none p-5 pb-safe max-h-[88vh] md:max-h-full overflow-y-auto flex flex-col justify-between gap-5"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="space-y-5">
@@ -103,7 +106,7 @@ export const PositionDetailDrawer: React.FC<PositionDetailDrawerProps> = ({
           </div>
 
           {/* Primary PnL Readout */}
-          <div className="p-4 rounded-xl bg-[#05080F] border border-white/[0.08] flex items-center justify-between font-mono">
+          <div className="p-4 rounded-xl bg-[#080305] border border-[#ff3555]/25 flex items-center justify-between font-mono">
             <div>
               <div className="text-[11px] text-slate-400 font-sans">
                 {position.status === 'open' ? 'Unrealized PnL' : 'Realized PnL'}
@@ -128,11 +131,11 @@ export const PositionDetailDrawer: React.FC<PositionDetailDrawerProps> = ({
 
           {/* Position Intraday PnL Curve */}
           {position.pnl_history && position.pnl_history.length > 0 && (
-            <div className="rounded-xl overflow-hidden border border-white/[0.08]">
-              <div className="px-3 py-2 bg-[#05080F] border-b border-white/[0.06] text-[11px] font-mono text-slate-400">
+            <div className="rounded-xl overflow-hidden border border-[#ff3555]/25">
+              <div className="px-3 py-2 bg-[#080305] border-b border-[#ff3555]/15 text-[11px] font-mono text-[#d4a5ac]">
                 Position PnL Trajectory (USD)
               </div>
-              <div ref={chartRef} className="w-full bg-[#05080F]" />
+              <div ref={chartRef} className="w-full bg-[#080305]" />
             </div>
           )}
 
@@ -174,8 +177,8 @@ export const PositionDetailDrawer: React.FC<PositionDetailDrawerProps> = ({
               </span>
             </div>
             <div className="py-2 flex justify-between">
-              <span className="text-slate-400 font-sans">SL/TP Protection</span>
-              <span className="text-[#00E5FF]">{position.sl_tp_status}</span>
+              <span className="text-[#d4a5ac] font-sans">SL/TP Protection</span>
+              <span className="text-[#ff6375]">{position.sl_tp_status}</span>
             </div>
             <div className="py-2 flex justify-between">
               <span className="text-slate-400 font-sans">Strategy Engine</span>
@@ -195,10 +198,11 @@ export const PositionDetailDrawer: React.FC<PositionDetailDrawerProps> = ({
             <span>Read-Only Inspector</span>
           </div>
           <button
+            type="button"
             onClick={() => onOpenChart(position)}
-            className="px-4 py-2 min-h-[42px] rounded-lg bg-[#00E5FF]/15 hover:bg-[#00E5FF]/25 border border-[#00E5FF]/35 text-[#00E5FF] text-xs font-medium flex items-center gap-1.5 transition-colors"
+            className="px-4 py-2 min-h-[42px] rounded-lg bg-[#ff3555]/15 hover:bg-[#ff3555]/25 border border-[#ff3555]/45 text-[#ffe3e5] text-xs font-medium flex items-center gap-1.5 transition-colors"
           >
-            <LineChart className="w-3.5 h-3.5" />
+            <LineChart className="w-3.5 h-3.5 text-[#ff6375]" />
             <span>Inspect on Chart</span>
           </button>
         </div>

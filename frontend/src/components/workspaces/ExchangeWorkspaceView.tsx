@@ -129,9 +129,9 @@ export const ExchangeWorkspaceView: React.FC<ExchangeWorkspaceViewProps> = ({
             </div>
 
             <div className="nq-panel rounded-xl p-4">
-              <div className="text-xs text-slate-400">Free Collateral</div>
-              <div className="text-xl font-mono font-bold text-[#00E5FF] mt-1">{formatUsd(ex.available_margin_usd)}</div>
-              <div className="text-[11px] font-mono text-slate-400 mt-1">Available Paper Capital</div>
+              <div className="text-xs text-[#d4a5ac]">Free Collateral</div>
+              <div className="text-xl font-mono font-bold text-[#ff6375] mt-1">{formatUsd(ex.available_margin_usd)}</div>
+              <div className="text-[11px] font-mono text-[#b8868e] mt-1">Available Paper Capital</div>
             </div>
 
             <div className="nq-panel rounded-xl p-4">
@@ -169,7 +169,7 @@ export const ExchangeWorkspaceView: React.FC<ExchangeWorkspaceViewProps> = ({
       })()}
 
       {/* Sub-Tabs */}
-      <div className="flex items-center gap-1 p-1 rounded-lg bg-[#0B1120] border border-white/[0.08] overflow-x-auto no-scrollbar">
+      <div className="flex items-center gap-1 p-1 rounded-lg bg-[#120508] border border-[#ff3555]/20 overflow-x-auto no-scrollbar">
         {[
           { id: 'futures', label: `Futures Positions (${futuresPositions.length})` },
           { id: 'spot', label: `Spot Portfolio (${spotHoldings.length})` },
@@ -178,11 +178,12 @@ export const ExchangeWorkspaceView: React.FC<ExchangeWorkspaceViewProps> = ({
         ].map((tab) => (
           <button
             key={tab.id}
+            type="button"
             onClick={() => setActiveTab(tab.id as WorkspaceTab)}
             className={`px-3.5 py-2 min-h-[38px] rounded-md text-xs font-medium whitespace-nowrap shrink-0 transition-colors ${
               activeTab === tab.id
-                ? 'bg-[#00E5FF]/20 text-[#00E5FF]'
-                : 'text-slate-400 hover:text-white'
+                ? 'bg-[#ff3555]/25 text-[#ffe3e5] border border-[#ff3555]/45'
+                : 'text-[#d4a5ac] hover:text-[#ffe3e5] border border-transparent'
             }`}
           >
             {tab.label}
@@ -202,7 +203,7 @@ export const ExchangeWorkspaceView: React.FC<ExchangeWorkspaceViewProps> = ({
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse text-xs font-mono">
                 <thead>
-                  <tr className="border-b border-white/[0.08] bg-[#0B1120] text-[11px] text-slate-400">
+                  <tr className="border-b border-[#ff3555]/20 bg-[#120508] text-[11px] text-[#d4a5ac]">
                     <th className="py-3 px-4">Contract / Mode</th>
                     <th className="py-3 px-3">Side / Lev</th>
                     <th className="py-3 px-3 text-right">Qty / Notional</th>
@@ -280,7 +281,7 @@ export const ExchangeWorkspaceView: React.FC<ExchangeWorkspaceViewProps> = ({
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse text-xs font-mono">
                 <thead>
-                  <tr className="border-b border-white/[0.08] bg-[#0B1120] text-[11px] text-slate-400">
+                  <tr className="border-b border-[#ff3555]/20 bg-[#120508] text-[11px] text-[#d4a5ac]">
                     <th className="py-3 px-4">Asset / Mode</th>
                     <th className="py-3 px-3 text-right">Available</th>
                     <th className="py-3 px-3 text-right">Locked</th>
@@ -333,7 +334,7 @@ export const ExchangeWorkspaceView: React.FC<ExchangeWorkspaceViewProps> = ({
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse text-xs font-mono">
                 <thead>
-                  <tr className="border-b border-white/[0.08] bg-[#0B1120] text-[11px] text-slate-400">
+                  <tr className="border-b border-[#ff3555]/20 bg-[#120508] text-[11px] text-[#d4a5ac]">
                     <th className="py-3 px-4">Time / Pair</th>
                     <th className="py-3 px-3">Type / Side</th>
                     <th className="py-3 px-3">Status</th>
@@ -360,7 +361,7 @@ export const ExchangeWorkspaceView: React.FC<ExchangeWorkspaceViewProps> = ({
                             ord.status === 'FILLED'
                               ? 'text-[#10B981]'
                               : ord.status === 'OPEN'
-                              ? 'text-[#00E5FF]'
+                              ? 'text-[#ff6375]'
                               : ord.status === 'REJECTED'
                               ? 'text-[#EF4444]'
                               : 'text-slate-400'

@@ -27,23 +27,23 @@ export const PortfolioAnalyticsView: React.FC<PortfolioAnalyticsViewProps> = ({ 
       width: container.clientWidth,
       height: 280,
       layout: {
-        background: { type: ColorType.Solid, color: '#05080F' },
-        textColor: '#94A3B8',
+        background: { type: ColorType.Solid, color: '#080305' },
+        textColor: '#d4a5ac',
         fontFamily: "'JetBrains Mono', monospace",
         fontSize: 11
       },
       grid: {
-        vertLines: { color: 'rgba(148, 163, 184, 0.06)' },
-        horzLines: { color: 'rgba(148, 163, 184, 0.06)' }
+        vertLines: { color: 'rgba(255, 53, 85, 0.07)' },
+        horzLines: { color: 'rgba(255, 53, 85, 0.07)' }
       },
-      rightPriceScale: { borderColor: 'rgba(148, 163, 184, 0.14)' },
-      timeScale: { borderColor: 'rgba(148, 163, 184, 0.14)', timeVisible: false }
+      rightPriceScale: { borderColor: 'rgba(255, 53, 85, 0.2)' },
+      timeScale: { borderColor: 'rgba(255, 53, 85, 0.2)', timeVisible: false }
     });
 
     const series = chart.addSeries(AreaSeries, {
-      lineColor: '#00E5FF',
-      topColor: 'rgba(0, 229, 255, 0.28)',
-      bottomColor: 'rgba(5, 8, 15, 0.0)',
+      lineColor: '#ff3555',
+      topColor: 'rgba(255, 53, 85, 0.28)',
+      bottomColor: 'rgba(8, 3, 5, 0.0)',
       lineWidth: 2
     });
 
@@ -96,8 +96,8 @@ export const PortfolioAnalyticsView: React.FC<PortfolioAnalyticsViewProps> = ({ 
         </div>
 
         <div className="nq-panel rounded-xl p-4">
-          <div className="text-xs text-slate-400">Sharpe / Sortino</div>
-          <div className="text-2xl font-mono font-bold text-[#00E5FF] mt-1">
+          <div className="text-xs text-[#d4a5ac]">Sharpe / Sortino</div>
+          <div className="text-2xl font-mono font-bold text-[#ff6375] mt-1">
             {analytics.sharpe_ratio !== null ? analytics.sharpe_ratio.toFixed(2) : '—'} /{' '}
             {analytics.sortino_ratio !== null ? analytics.sortino_ratio.toFixed(2) : '—'}
           </div>
@@ -121,18 +121,18 @@ export const PortfolioAnalyticsView: React.FC<PortfolioAnalyticsViewProps> = ({ 
 
       {/* Equity Curve Chart */}
       <div className="nq-panel rounded-xl overflow-hidden">
-        <div className="px-4 py-3 border-b border-white/[0.08] flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-white">Aggregate Paper Equity Curve (USD)</h3>
-          <span className="text-xs font-mono text-[#00E5FF]">
+        <div className="px-4 py-3 border-b border-[#ff3555]/20 flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-[#ffe3e5]">Aggregate Paper Equity Curve (USD)</h3>
+          <span className="text-xs font-mono text-[#ff6375]">
             Current: {formatUsd(state.risk.total_paper_equity_usd)}
           </span>
         </div>
         {normalizedCurve.length === 0 ? (
-          <div className="p-8 text-center text-xs text-slate-400 bg-[#05080F]">
+          <div className="p-8 text-center text-xs text-[#d4a5ac] bg-[#080305]">
             No timestamped equity points recorded yet.
           </div>
         ) : (
-          <div ref={chartContainerRef} className="w-full bg-[#05080F]" />
+          <div ref={chartContainerRef} className="w-full bg-[#080305]" />
         )}
       </div>
 

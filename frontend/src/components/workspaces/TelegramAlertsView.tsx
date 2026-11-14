@@ -70,13 +70,14 @@ export const TelegramAlertsView: React.FC<TelegramAlertsViewProps> = ({ state, t
 
       {/* Filters */}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center p-1 rounded-lg bg-[#0B1120] border border-white/[0.08] overflow-x-auto no-scrollbar">
+        <div className="flex items-center p-1 rounded-lg bg-[#120508] border border-[#ff3555]/25 overflow-x-auto no-scrollbar">
           {(['ALL', 'SIGNAL', 'POSITION', 'RISK', 'SYSTEM'] as const).map((cat) => (
             <button
               key={cat}
+              type="button"
               onClick={() => setCategoryFilter(cat)}
               className={`px-3 py-1.5 min-h-[34px] rounded-md text-xs font-medium whitespace-nowrap shrink-0 ${
-                categoryFilter === cat ? 'bg-[#00E5FF]/20 text-[#00E5FF]' : 'text-slate-400 hover:text-white'
+                categoryFilter === cat ? 'bg-[#ff3555]/25 text-[#ffe3e5]' : 'text-[#d4a5ac] hover:text-[#ffe3e5]'
               }`}
             >
               {cat}
@@ -85,13 +86,13 @@ export const TelegramAlertsView: React.FC<TelegramAlertsViewProps> = ({ state, t
         </div>
 
         <div className="relative w-full sm:w-64">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+          <Search className="w-4 h-4 text-[#c28e95] absolute left-3 top-1/2 -translate-y-1/2" />
           <input
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search alerts..."
-            className="w-full pl-9 pr-3 py-2 min-h-[38px] rounded-lg bg-[#0B1120] border border-white/[0.1] text-xs text-white placeholder-slate-500 focus:outline-none focus:border-[#00E5FF]"
+            className="w-full pl-9 pr-3 py-2 min-h-[38px] rounded-lg bg-[#120508] border border-[#ff3555]/25 text-xs text-[#ffe3e5] placeholder-[#9e6d74] focus:outline-none focus:border-[#ff6375]"
           />
         </div>
       </div>
@@ -121,7 +122,7 @@ export const TelegramAlertsView: React.FC<TelegramAlertsViewProps> = ({ state, t
                         ? 'text-amber-400'
                         : alert.severity === 'success'
                         ? 'text-[#10B981]'
-                        : 'text-[#00E5FF]'
+                        : 'text-[#ff6375]'
                     }`}
                   />
                   <span className="font-semibold text-white font-sans text-sm">{alert.title}</span>

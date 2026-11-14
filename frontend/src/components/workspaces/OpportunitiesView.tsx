@@ -22,15 +22,16 @@ export const OpportunitiesView: React.FC<OpportunitiesViewProps> = ({ state, onI
         title="Trading Opportunities & Screening Audit"
         subtitle="Strategy projections, estimated execution costs, risk/reward filters, and explicit rejection reasons"
         actions={
-          <div className="flex items-center p-1 rounded-lg bg-[#0B1120] border border-white/[0.08]">
+          <div className="flex items-center p-1 rounded-lg bg-[#120508] border border-[#ff3555]/25">
             {(['ALL', 'APPROVED', 'WATCHLIST', 'REJECTED'] as const).map((status) => (
               <button
                 key={status}
+                type="button"
                 onClick={() => setDecisionFilter(status)}
                 className={`px-3 py-1.5 min-h-[36px] rounded-md text-xs font-medium whitespace-nowrap shrink-0 transition-colors ${
                   decisionFilter === status
-                    ? 'bg-[#00E5FF]/20 text-[#00E5FF]'
-                    : 'text-slate-400 hover:text-white'
+                    ? 'bg-[#ff3555]/25 text-[#ffe3e5]'
+                    : 'text-[#d4a5ac] hover:text-[#ffe3e5]'
                 }`}
               >
                 {status}
@@ -118,12 +119,12 @@ export const OpportunitiesView: React.FC<OpportunitiesViewProps> = ({ state, onI
                       </div>
                     </div>
 
-                    <div className="pl-4 border-l border-white/[0.08]">
-                      <div className="text-[11px] text-[#8B5CF6] font-sans mb-1.5">Strategy Model Estimates</div>
+                    <div className="pl-4 border-l border-[#ff3555]/20">
+                      <div className="text-[11px] text-[#ffb16c] font-sans mb-1.5">Strategy Model Estimates</div>
                       <div className="space-y-1 text-slate-300">
                         <div className="flex justify-between">
                           <span className="text-slate-500">Entry:</span>
-                          <span className="text-[#00E5FF]">{formatPrice(estimates.suggested_entry)}</span>
+                          <span className="text-[#ff6375]">{formatPrice(estimates.suggested_entry)}</span>
                         </div>
                         <div className="flex justify-between">
                           <span className="text-slate-500">SL / TP:</span>
@@ -165,10 +166,11 @@ export const OpportunitiesView: React.FC<OpportunitiesViewProps> = ({ state, onI
                 <div className="pt-3 border-t border-white/[0.06] flex items-center justify-between text-xs">
                   <span className="font-mono text-slate-400 truncate">{estimates.strategy_name}</span>
                   <button
+                    type="button"
                     onClick={() => onInspectChart(opp)}
-                    className="px-3 py-1.5 min-h-[36px] rounded-lg bg-[#00E5FF]/10 hover:bg-[#00E5FF]/20 border border-[#00E5FF]/30 text-[#00E5FF] font-medium flex items-center gap-1.5 whitespace-nowrap shrink-0 transition-colors"
+                    className="px-3 py-1.5 min-h-[36px] rounded-lg bg-[#ff3555]/15 hover:bg-[#ff3555]/25 border border-[#ff3555]/40 text-[#ffe3e5] font-medium flex items-center gap-1.5 whitespace-nowrap shrink-0 transition-colors"
                   >
-                    <LineChart className="w-3.5 h-3.5" />
+                    <LineChart className="w-3.5 h-3.5 text-[#ff6375]" />
                     <span>Inspect on Chart</span>
                   </button>
                 </div>

@@ -64,18 +64,18 @@ export const RiskCommandView: React.FC<RiskCommandViewProps> = ({ state, health 
           </div>
           <div className="w-full h-1.5 bg-white/10 rounded-full mt-2 overflow-hidden">
             <div
-              className="h-full bg-[#00E5FF] rounded-full"
+              className="h-full bg-[#ff3555] rounded-full"
               style={{
                 width: `${ddSummary.available && ddSummary.currentPct !== null && ddSummary.limitPct > 0 ? Math.min(100, (ddSummary.currentPct / ddSummary.limitPct) * 100) : 0}%`
               }}
             />
           </div>
-          <div className="text-[10px] font-mono text-slate-500 mt-1">{ddSummary.subtitle}</div>
+          <div className="text-[10px] font-mono text-[#b8868e] mt-1">{ddSummary.subtitle}</div>
         </div>
 
         <div className="nq-panel rounded-xl p-4">
-          <div className="text-xs text-slate-400">Notional / Net Delta</div>
-          <div className="text-xl font-mono font-bold text-[#00E5FF] mt-1">
+          <div className="text-xs text-[#d4a5ac]">Notional / Net Delta</div>
+          <div className="text-xl font-mono font-bold text-[#ff6375] mt-1">
             {formatUsd(exposureSummary.grossNotionalUsd)}
           </div>
           <div className="text-[11px] font-mono text-slate-400 mt-1">
@@ -147,7 +147,7 @@ export const RiskCommandView: React.FC<RiskCommandViewProps> = ({ state, health 
                 </div>
                 <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
                   <div
-                    className="h-full bg-gradient-to-r from-[#00E5FF] to-[#8B5CF6] rounded-full"
+                    className="h-full bg-gradient-to-r from-[#ff3555] to-[#ffb16c] rounded-full"
                     style={{ width: `${Math.min(100, item.share_pct)}%` }}
                   />
                 </div>

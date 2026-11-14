@@ -31,19 +31,21 @@ export const MarketScannerView: React.FC<MarketScannerViewProps> = ({
         title="Multi-Exchange Market Scanner"
         subtitle="Confirmed real-time market microstructure cleanly separated from strategy model projections"
         actions={
-          <div className="flex items-center p-1 rounded-lg bg-[#0B1120] border border-white/[0.1]">
+          <div className="flex items-center p-1 rounded-lg bg-[#120508] border border-[#ff3555]/25">
             <button
+              type="button"
               onClick={() => setActiveTab('scanner')}
               className={`px-3 py-1.5 min-h-[36px] rounded-md text-xs font-medium whitespace-nowrap shrink-0 transition-colors ${
-                activeTab === 'scanner' ? 'bg-[#00E5FF]/20 text-[#00E5FF]' : 'text-slate-400 hover:text-white'
+                activeTab === 'scanner' ? 'bg-[#ff3555]/25 text-[#ffe3e5]' : 'text-[#d4a5ac] hover:text-[#ffe3e5]'
               }`}
             >
               Microstructure Scanner
             </button>
             <button
+              type="button"
               onClick={() => setActiveTab('arbitrage')}
               className={`px-3 py-1.5 min-h-[36px] rounded-md text-xs font-medium whitespace-nowrap shrink-0 transition-colors flex items-center gap-1.5 ${
-                activeTab === 'arbitrage' ? 'bg-[#8B5CF6]/25 text-white' : 'text-slate-400 hover:text-white'
+                activeTab === 'arbitrage' ? 'bg-[#ff3555]/25 text-[#ffe3e5]' : 'text-[#d4a5ac] hover:text-[#ffe3e5]'
               }`}
             >
               <ArrowRightLeft className="w-3.5 h-3.5" />
@@ -57,15 +59,16 @@ export const MarketScannerView: React.FC<MarketScannerViewProps> = ({
         <>
           {/* Filters Bar */}
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center p-1 rounded-lg bg-[#0B1120] border border-white/[0.08]">
+            <div className="flex items-center p-1 rounded-lg bg-[#120508] border border-[#ff3555]/25">
               {(['all', 'binance', 'bybit', 'okx'] as const).map((ex) => (
                 <button
                   key={ex}
+                  type="button"
                   onClick={() => setExchangeFilter(ex)}
                   className={`px-3 py-1.5 min-h-[36px] rounded-md text-xs font-medium uppercase whitespace-nowrap shrink-0 transition-colors ${
                     exchangeFilter === ex
-                      ? 'bg-[#00E5FF]/20 text-[#00E5FF]'
-                      : 'text-slate-400 hover:text-white'
+                      ? 'bg-[#ff3555]/25 text-[#ffe3e5]'
+                      : 'text-[#d4a5ac] hover:text-[#ffe3e5]'
                   }`}
                 >
                   {ex}
@@ -74,13 +77,13 @@ export const MarketScannerView: React.FC<MarketScannerViewProps> = ({
             </div>
 
             <div className="relative w-full sm:w-64">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <Search className="w-4 h-4 text-[#c28e95] absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search pair or strategy..."
-                className="w-full pl-9 pr-3 py-2 min-h-[40px] rounded-lg bg-[#0B1120] border border-white/[0.1] text-xs text-white placeholder-slate-500 focus:outline-none focus:border-[#00E5FF]"
+                className="w-full pl-9 pr-3 py-2 min-h-[40px] rounded-lg bg-[#120508] border border-[#ff3555]/25 text-xs text-[#ffe3e5] placeholder-[#9e6d74] focus:outline-none focus:border-[#ff6375]"
               />
             </div>
           </div>
@@ -100,7 +103,7 @@ export const MarketScannerView: React.FC<MarketScannerViewProps> = ({
               <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse">
                   <thead>
-                    <tr className="border-b border-white/[0.08] bg-[#0B1120] text-[11px] font-mono text-slate-400">
+                    <tr className="border-b border-[#ff3555]/20 bg-[#120508] text-[11px] font-mono text-[#d4a5ac]">
                       <th className="py-3 px-4">Exchange / Pair</th>
                       <th className="py-3 px-3 text-right">Last Price</th>
                       <th className="py-3 px-3 text-right">24h %</th>
@@ -108,8 +111,8 @@ export const MarketScannerView: React.FC<MarketScannerViewProps> = ({
                       <th className="py-3 px-3 text-right">Spread / Depth(1%)</th>
                       <th className="py-3 px-3 text-right">Vol / Mom</th>
                       <th className="py-3 px-3">Confirmed Regime</th>
-                      <th className="py-3 px-3 border-l border-white/[0.08] text-[#8B5CF6]">Est. Signal & Conf</th>
-                      <th className="py-3 px-3 text-right text-[#8B5CF6]">Est. Fee/Slip</th>
+                      <th className="py-3 px-3 border-l border-[#ff3555]/20 text-[#ffb16c]">Est. Signal & Conf</th>
+                      <th className="py-3 px-3 text-right text-[#ffb16c]">Est. Fee/Slip</th>
                       <th className="py-3 px-4 text-right">Action</th>
                     </tr>
                   </thead>
@@ -148,7 +151,7 @@ export const MarketScannerView: React.FC<MarketScannerViewProps> = ({
                           </td>
                           <td className="py-3 px-3 text-right">
                             <div className="text-slate-200">{c.realized_volatility_pct.toFixed(2)}%</div>
-                            <div className="text-[10px] text-[#00E5FF]">Mom {c.momentum_score.toFixed(2)}</div>
+                            <div className="text-[10px] text-[#ff6375]">Mom {c.momentum_score.toFixed(2)}</div>
                           </td>
                           <td className="py-3 px-3 text-[11px] text-slate-300">
                             {c.regime.replace(/_/g, ' ')}
@@ -175,8 +178,9 @@ export const MarketScannerView: React.FC<MarketScannerViewProps> = ({
                           </td>
                           <td className="py-3 px-4 text-right">
                             <button
+                              type="button"
                               onClick={() => onInspectOpportunityChart(item)}
-                              className="px-2.5 py-1.5 min-h-[32px] rounded bg-[#00E5FF]/10 hover:bg-[#00E5FF]/20 border border-[#00E5FF]/30 text-[#00E5FF] text-[11px] font-sans font-medium whitespace-nowrap"
+                              className="px-2.5 py-1.5 min-h-[32px] rounded bg-[#ff3555]/15 hover:bg-[#ff3555]/25 border border-[#ff3555]/40 text-[#ffe3e5] text-[11px] font-sans font-medium whitespace-nowrap"
                             >
                               Chart
                             </button>
@@ -205,11 +209,11 @@ export const MarketScannerView: React.FC<MarketScannerViewProps> = ({
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse text-xs font-mono">
               <thead>
-                <tr className="border-b border-white/[0.08] bg-[#0B1120] text-[11px] text-slate-400">
+                <tr className="border-b border-[#ff3555]/20 bg-[#120508] text-[11px] text-[#d4a5ac]">
                   <th className="py-3 px-4">Pair</th>
-                  <th className="py-3 px-3 text-right text-[#F0B90B]">Binance</th>
-                  <th className="py-3 px-3 text-right text-[#00E5FF]">Bybit</th>
-                  <th className="py-3 px-3 text-right text-[#8B5CF6]">OKX</th>
+                  <th className="py-3 px-3 text-right text-[#F5B731]">Binance</th>
+                  <th className="py-3 px-3 text-right text-[#ff6375]">Bybit</th>
+                  <th className="py-3 px-3 text-right text-[#ffb16c]">OKX</th>
                   <th className="py-3 px-3 text-right">Gross Spread</th>
                   <th className="py-3 px-3 text-right">Est. Net Arb</th>
                   <th className="py-3 px-4">Assessment</th>

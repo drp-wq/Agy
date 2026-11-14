@@ -268,21 +268,21 @@ export const ProMarketChart: React.FC<ProMarketChartProps> = ({
       width: container.clientWidth,
       height: isFullscreen ? Math.max(420, window.innerHeight - 280) : compact ? 290 : 380,
       layout: {
-        background: { type: ColorType.Solid, color: '#05080F' },
-        textColor: '#94A3B8',
+        background: { type: ColorType.Solid, color: '#080305' },
+        textColor: '#d4a5ac',
         fontFamily: "'JetBrains Mono', monospace",
         fontSize: 11
       },
       grid: {
-        vertLines: { color: 'rgba(148, 163, 184, 0.06)' },
-        horzLines: { color: 'rgba(148, 163, 184, 0.06)' }
+        vertLines: { color: 'rgba(255, 53, 85, 0.06)' },
+        horzLines: { color: 'rgba(255, 53, 85, 0.06)' }
       },
       crosshair: {
-        vertLine: { color: 'rgba(0, 229, 255, 0.45)', width: 1, style: 2 },
-        horzLine: { color: 'rgba(0, 229, 255, 0.45)', width: 1, style: 2 }
+        vertLine: { color: 'rgba(255, 53, 85, 0.5)', width: 1, style: 2 },
+        horzLine: { color: 'rgba(255, 53, 85, 0.5)', width: 1, style: 2 }
       },
-      rightPriceScale: { borderColor: 'rgba(148, 163, 184, 0.14)' },
-      timeScale: { borderColor: 'rgba(148, 163, 184, 0.14)', timeVisible: true, secondsVisible: false },
+      rightPriceScale: { borderColor: 'rgba(255, 53, 85, 0.18)' },
+      timeScale: { borderColor: 'rgba(255, 53, 85, 0.18)', timeVisible: true, secondsVisible: false },
       handleScroll: { mouseWheel: true, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: true },
       handleScale: { axisPressedMouseMove: true, mouseWheel: true, pinch: true }
     });
@@ -305,10 +305,10 @@ export const ProMarketChart: React.FC<ProMarketChartProps> = ({
     chart.priceScale('volume').applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
 
     ema9SeriesRef.current = showEma
-      ? chart.addSeries(LineSeries, { color: '#00E5FF', lineWidth: 1, priceLineVisible: false, lastValueVisible: false })
+      ? chart.addSeries(LineSeries, { color: '#ff3555', lineWidth: 1, priceLineVisible: false, lastValueVisible: false })
       : null;
     ema21SeriesRef.current = showEma
-      ? chart.addSeries(LineSeries, { color: '#8B5CF6', lineWidth: 1, priceLineVisible: false, lastValueVisible: false })
+      ? chart.addSeries(LineSeries, { color: '#ffb16c', lineWidth: 1, priceLineVisible: false, lastValueVisible: false })
       : null;
     vwapSeriesRef.current = showVwap
       ? chart.addSeries(LineSeries, { color: '#F59E0B', lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false })
@@ -409,7 +409,7 @@ export const ProMarketChart: React.FC<ProMarketChartProps> = ({
       priceLinesRef.current.push(
         candleSeries.createPriceLine({
           price: activePosition.entry_price,
-          color: '#00E5FF',
+          color: '#ff6375',
           lineWidth: 2,
           lineStyle: 0,
           axisLabelVisible: true,
@@ -457,32 +457,32 @@ export const ProMarketChart: React.FC<ProMarketChartProps> = ({
       width: container.clientWidth,
       height: 120,
       layout: {
-        background: { type: ColorType.Solid, color: '#05080F' },
-        textColor: '#94A3B8',
+        background: { type: ColorType.Solid, color: '#080305' },
+        textColor: '#d4a5ac',
         fontFamily: "'JetBrains Mono', monospace",
         fontSize: 10
       },
       grid: {
-        vertLines: { color: 'rgba(148, 163, 184, 0.05)' },
-        horzLines: { color: 'rgba(148, 163, 184, 0.05)' }
+        vertLines: { color: 'rgba(255, 53, 85, 0.05)' },
+        horzLines: { color: 'rgba(255, 53, 85, 0.05)' }
       },
-      rightPriceScale: { borderColor: 'rgba(148, 163, 184, 0.14)' },
-      timeScale: { borderColor: 'rgba(148, 163, 184, 0.14)', timeVisible: true }
+      rightPriceScale: { borderColor: 'rgba(255, 53, 85, 0.18)' },
+      timeScale: { borderColor: 'rgba(255, 53, 85, 0.18)', timeVisible: true }
     });
 
     oscChartRef.current = oscChart;
 
     if (oscillator === 'rsi') {
-      const rsiSeries = oscChart.addSeries(LineSeries, { color: '#8B5CF6', lineWidth: 2 });
+      const rsiSeries = oscChart.addSeries(LineSeries, { color: '#ff6375', lineWidth: 2 });
       rsiSeries.createPriceLine({ price: 70, color: 'rgba(239, 68, 68, 0.4)', lineWidth: 1, lineStyle: 2, axisLabelVisible: false, title: '70' });
       rsiSeries.createPriceLine({ price: 30, color: 'rgba(16, 185, 129, 0.4)', lineWidth: 1, lineStyle: 2, axisLabelVisible: false, title: '30' });
       oscRsiRef.current = rsiSeries;
     } else if (oscillator === 'macd') {
       oscHistRef.current = oscChart.addSeries(HistogramSeries, {});
-      oscMacdRef.current = oscChart.addSeries(LineSeries, { color: '#00E5FF', lineWidth: 1, priceLineVisible: false });
-      oscSigRef.current = oscChart.addSeries(LineSeries, { color: '#F59E0B', lineWidth: 1, priceLineVisible: false });
+      oscMacdRef.current = oscChart.addSeries(LineSeries, { color: '#ff3555', lineWidth: 1, priceLineVisible: false });
+      oscSigRef.current = oscChart.addSeries(LineSeries, { color: '#ffb16c', lineWidth: 1, priceLineVisible: false });
     } else if (oscillator === 'atr') {
-      oscAtrRef.current = oscChart.addSeries(LineSeries, { color: '#00E5FF', lineWidth: 2 });
+      oscAtrRef.current = oscChart.addSeries(LineSeries, { color: '#ff3555', lineWidth: 2 });
     }
 
     const main = mainChartRef.current;
@@ -540,21 +540,21 @@ export const ProMarketChart: React.FC<ProMarketChartProps> = ({
 
   return (
     <div
-      className={`nq-panel rounded-xl border border-white/[0.1] overflow-hidden flex flex-col ${
-        isFullscreen ? 'fixed inset-3 z-50 bg-[#05080F] shadow-2xl' : ''
+      className={`nq-panel rounded-xl border border-[#ff3555]/25 overflow-hidden flex flex-col ${
+        isFullscreen ? 'fixed inset-3 z-50 bg-[#080305] shadow-2xl' : ''
       }`}
     >
       {/* Top Toolbar */}
-      <div className="px-4 py-3 border-b border-white/[0.08] flex flex-wrap items-center justify-between gap-2 bg-[#0B1120]/90">
+      <div className="px-4 py-3 border-b border-[#ff3555]/20 flex flex-wrap items-center justify-between gap-2 bg-[#120508]/95">
         <div className="flex flex-wrap items-center gap-2">
           {onExchangeChange && (
-            <div className="flex items-center p-0.5 rounded-lg bg-[#05080F] border border-white/[0.08]">
+            <div className="flex items-center p-0.5 rounded-lg bg-[#080305] border border-[#ff3555]/25">
               {(['binance', 'bybit', 'okx'] as ExchangeId[]).map((ex) => (
                 <button
                   key={ex}
                   onClick={() => onExchangeChange(ex)}
                   className={`px-2.5 py-1 min-h-[32px] rounded-md text-xs font-medium uppercase whitespace-nowrap shrink-0 transition-colors ${
-                    exchange === ex ? 'bg-[#00E5FF]/20 text-[#00E5FF]' : 'text-slate-400 hover:text-white'
+                    exchange === ex ? 'bg-[#ff3555]/25 text-[#ffe3e5]' : 'text-[#c28e95] hover:text-[#ffe3e5]'
                   }`}
                 >
                   {ex}
@@ -564,13 +564,13 @@ export const ProMarketChart: React.FC<ProMarketChartProps> = ({
           )}
 
           {onMarketTypeChange && (
-            <div className="flex items-center p-0.5 rounded-lg bg-[#05080F] border border-white/[0.08]">
+            <div className="flex items-center p-0.5 rounded-lg bg-[#080305] border border-[#ff3555]/25">
               {(['spot', 'futures'] as MarketType[]).map((mt) => (
                 <button
                   key={mt}
                   onClick={() => onMarketTypeChange(mt)}
                   className={`px-2.5 py-1 min-h-[32px] rounded-md text-xs font-medium capitalize whitespace-nowrap shrink-0 transition-colors ${
-                    marketType === mt ? 'bg-[#8B5CF6]/25 text-white' : 'text-slate-400 hover:text-white'
+                    marketType === mt ? 'bg-[#ff6375]/25 text-[#ffe3e5]' : 'text-[#c28e95] hover:text-[#ffe3e5]'
                   }`}
                 >
                   {mt}
@@ -584,7 +584,7 @@ export const ProMarketChart: React.FC<ProMarketChartProps> = ({
               value={symbol}
               onChange={(e) => onSymbolChange(e.target.value)}
               aria-label="Trading pair"
-              className="bg-[#05080F] border border-white/[0.12] rounded-lg px-2.5 py-1.5 min-h-[34px] text-xs font-mono font-semibold text-white focus:outline-none focus:border-[#00E5FF]"
+              className="bg-[#080305] border border-[#ff3555]/30 rounded-lg px-2.5 py-1.5 min-h-[34px] text-xs font-mono font-semibold text-[#ffe3e5] focus:outline-none focus:border-[#ff6375]"
             >
               {(AVAILABLE_SYMBOLS.includes(symbol) ? AVAILABLE_SYMBOLS : [symbol, ...AVAILABLE_SYMBOLS]).map((sym) => (
                 <option key={sym} value={sym}>
@@ -593,17 +593,17 @@ export const ProMarketChart: React.FC<ProMarketChartProps> = ({
               ))}
             </select>
           ) : (
-            <span className="text-xs font-mono font-semibold text-white px-2">{symbol}</span>
+            <span className="text-xs font-mono font-semibold text-[#ffe3e5] px-2">{symbol}</span>
           )}
 
           {onTimeframeChange && (
-            <div className="flex items-center p-0.5 rounded-lg bg-[#05080F] border border-white/[0.08]">
+            <div className="flex items-center p-0.5 rounded-lg bg-[#080305] border border-[#ff3555]/25">
               {AVAILABLE_TIMEFRAMES.map((tf) => (
                 <button
                   key={tf}
                   onClick={() => onTimeframeChange(tf)}
                   className={`px-2 py-1 min-h-[32px] rounded text-[11px] font-mono whitespace-nowrap shrink-0 transition-colors ${
-                    timeframe === tf ? 'bg-white/15 text-[#00E5FF] font-semibold' : 'text-slate-400 hover:text-white'
+                    timeframe === tf ? 'bg-[#ff3555]/25 text-[#ff6375] font-semibold' : 'text-[#c28e95] hover:text-[#ffe3e5]'
                   }`}
                 >
                   {tf}
@@ -619,7 +619,7 @@ export const ProMarketChart: React.FC<ProMarketChartProps> = ({
             className={`px-2.5 py-1 min-h-[34px] rounded-lg text-[11px] font-mono border transition-colors ${
               autoRefresh
                 ? 'border-[#10B981]/50 text-[#10B981] bg-[#10B981]/10'
-                : 'border-white/10 text-slate-400 bg-[#05080F]'
+                : 'border-[#ff3555]/25 text-[#c28e95] bg-[#080305]'
             }`}
             title="Toggle 6s automatic chart refresh"
           >
@@ -627,10 +627,10 @@ export const ProMarketChart: React.FC<ProMarketChartProps> = ({
           </button>
           <button
             onClick={() => loadCandles({ incremental: false, force: true })}
-            className="p-2 min-h-[34px] min-w-[34px] flex items-center justify-center rounded-lg text-slate-400 hover:text-white hover:bg-white/5 transition-colors"
+            className="p-2 min-h-[34px] min-w-[34px] flex items-center justify-center rounded-lg text-[#c28e95] hover:text-[#ffe3e5] hover:bg-[#ff3555]/10 transition-colors"
             title="Refresh candles"
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-[#00E5FF]' : ''}`} />
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-[#ff6375]' : ''}`} />
           </button>
           <button
             onClick={handleResetZoom}
@@ -650,21 +650,21 @@ export const ProMarketChart: React.FC<ProMarketChartProps> = ({
       </div>
 
       {/* Indicator Controls & Crosshair OHLCV Strip */}
-      <div className="px-4 py-2 border-b border-white/[0.06] bg-[#05080F]/90 flex flex-wrap items-center justify-between gap-2 text-[11px] font-mono">
-        <div className="flex flex-wrap items-center gap-3 text-slate-400">
+      <div className="px-4 py-2 border-b border-[#ff3555]/15 bg-[#080305]/95 flex flex-wrap items-center justify-between gap-2 text-[11px] font-mono">
+        <div className="flex flex-wrap items-center gap-3 text-[#c28e95]">
           {latestBar ? (
             <>
-              <span className="text-slate-300 font-semibold">
+              <span className="text-[#ffe3e5] font-semibold">
                 {exchange.toUpperCase()} {symbol} · {marketType.toUpperCase()} · {timeframe}
               </span>
-              <span>O <strong className="text-white">{formatPrice(latestBar.open)}</strong></span>
+              <span>O <strong className="text-[#ffe3e5]">{formatPrice(latestBar.open)}</strong></span>
               <span>H <strong className="text-[#10B981]">{formatPrice(latestBar.high)}</strong></span>
               <span>L <strong className="text-[#EF4444]">{formatPrice(latestBar.low)}</strong></span>
-              <span>C <strong className="text-white">{formatPrice(latestBar.close)}</strong></span>
+              <span>C <strong className="text-[#ffe3e5]">{formatPrice(latestBar.close)}</strong></span>
               {latestRsi !== null && (
-                <span>RSI(14) <strong className="text-[#8B5CF6]">{latestRsi.toFixed(1)}</strong></span>
+                <span>RSI(14) <strong className="text-[#ff6375]">{latestRsi.toFixed(1)}</strong></span>
               )}
-              <span className={isStale ? 'text-amber-400' : 'text-[#10B981]'}>
+              <span className={isStale ? 'text-[#ffb16c]' : 'text-[#10B981]'}>
                 {dataSource === 'fast_api' ? backendSource : 'DEMO'}
                 {lastUpdatedMs > 0 ? ` · ${new Date(lastUpdatedMs).toLocaleTimeString()} (${ageSec ?? 0}s)` : ''}
                 {isStale ? ' · STALE' : ''}
@@ -679,7 +679,7 @@ export const ProMarketChart: React.FC<ProMarketChartProps> = ({
           <button
             onClick={() => setShowEma(!showEma)}
             className={`px-2 py-0.5 rounded border text-[10px] transition-colors ${
-              showEma ? 'border-[#00E5FF]/50 text-[#00E5FF] bg-[#00E5FF]/10' : 'border-white/10 text-slate-500'
+              showEma ? 'border-[#ff3555]/55 text-[#ff6375] bg-[#ff3555]/15' : 'border-[#ff3555]/20 text-[#a1737a]'
             }`}
           >
             EMA 9/21
@@ -687,7 +687,7 @@ export const ProMarketChart: React.FC<ProMarketChartProps> = ({
           <button
             onClick={() => setShowVwap(!showVwap)}
             className={`px-2 py-0.5 rounded border text-[10px] transition-colors ${
-              showVwap ? 'border-[#F59E0B]/50 text-[#F59E0B] bg-[#F59E0B]/10' : 'border-white/10 text-slate-500'
+              showVwap ? 'border-[#F59E0B]/50 text-[#F59E0B] bg-[#F59E0B]/10' : 'border-[#ff3555]/20 text-[#a1737a]'
             }`}
           >
             VWAP
@@ -695,7 +695,7 @@ export const ProMarketChart: React.FC<ProMarketChartProps> = ({
           <button
             onClick={() => setShowBollinger(!showBollinger)}
             className={`px-2 py-0.5 rounded border text-[10px] transition-colors ${
-              showBollinger ? 'border-slate-300/50 text-slate-200 bg-white/10' : 'border-white/10 text-slate-500'
+              showBollinger ? 'border-[#ffe3e5]/40 text-[#ffe3e5] bg-[#ff3555]/10' : 'border-[#ff3555]/20 text-[#a1737a]'
             }`}
           >
             BB(20)
@@ -703,20 +703,20 @@ export const ProMarketChart: React.FC<ProMarketChartProps> = ({
           <button
             onClick={() => setShowSR(!showSR)}
             className={`px-2 py-0.5 rounded border text-[10px] transition-colors ${
-              showSR ? 'border-[#10B981]/50 text-[#10B981] bg-[#10B981]/10' : 'border-white/10 text-slate-500'
+              showSR ? 'border-[#10B981]/50 text-[#10B981] bg-[#10B981]/10' : 'border-[#ff3555]/20 text-[#a1737a]'
             }`}
           >
             S/R
           </button>
-          <span className="text-slate-600 mx-0.5">|</span>
+          <span className="text-[#ff3555]/40 mx-0.5">|</span>
           {(['none', 'rsi', 'macd', 'atr'] as OscillatorMode[]).map((mode) => (
             <button
               key={mode}
               onClick={() => setOscillator(mode)}
               className={`px-2 py-0.5 rounded text-[10px] uppercase transition-colors ${
                 oscillator === mode
-                  ? 'bg-[#8B5CF6]/25 text-white border border-[#8B5CF6]/50'
-                  : 'text-slate-500 hover:text-slate-300'
+                  ? 'bg-[#ff3555]/25 text-[#ffe3e5] border border-[#ff3555]/50'
+                  : 'text-[#a1737a] hover:text-[#ffe3e5]'
               }`}
             >
               {mode === 'none' ? 'No Osc' : mode}
@@ -726,9 +726,9 @@ export const ProMarketChart: React.FC<ProMarketChartProps> = ({
       </div>
 
       {errorMsg && candles.length > 0 && (
-        <div className="px-4 py-1.5 bg-amber-500/10 border-b border-amber-500/30 text-[11px] font-mono text-amber-300 flex items-center justify-between gap-2">
+        <div className="px-4 py-1.5 bg-[#ffb16c]/10 border-b border-[#ffb16c]/30 text-[11px] font-mono text-[#ffb16c] flex items-center justify-between gap-2">
           <span>Feed stale ({errorMsg}) — retrying with backoff</span>
-          <button onClick={() => loadCandles({ incremental: false, force: true })} className="underline text-white">
+          <button onClick={() => loadCandles({ incremental: false, force: true })} className="underline text-[#ffe3e5]">
             Retry now
           </button>
         </div>
@@ -740,22 +740,22 @@ export const ProMarketChart: React.FC<ProMarketChartProps> = ({
           <p>{errorMsg}</p>
           <button
             onClick={() => loadCandles({ incremental: false, force: true })}
-            className="mt-3 px-3 py-1.5 rounded bg-[#EF4444]/15 border border-[#EF4444]/40 text-white"
+            className="mt-3 px-3 py-1.5 rounded bg-[#EF4444]/15 border border-[#EF4444]/40 text-[#ffe3e5]"
           >
             Retry Candles
           </button>
         </div>
       ) : (
-        <div className="bg-[#05080F] relative">
+        <div className="bg-[#080305] relative">
           {!loading && candles.length === 0 && (
-            <div className="p-8 text-center text-xs text-slate-400">
+            <div className="p-8 text-center text-xs text-[#c28e95]">
               No OHLCV candles returned for {exchange.toUpperCase()} {symbol} ({timeframe}).
             </div>
           )}
           <div ref={mainContainerRef} className="w-full touch-none" />
           {oscillator !== 'none' && (
-            <div className="border-t border-white/[0.08]">
-              <div className="px-4 py-1 text-[10px] font-mono text-slate-400 uppercase bg-[#080D1A]">
+            <div className="border-t border-[#ff3555]/20">
+              <div className="px-4 py-1 text-[10px] font-mono text-[#c28e95] uppercase bg-[#120508]">
                 {oscillator === 'rsi' && 'RSI (14) · Overbought 70 / Oversold 30'}
                 {oscillator === 'macd' && 'MACD (12, 26, 9) · Signal & Histogram'}
                 {oscillator === 'atr' && 'ATR (14) · Volatility Range'}

@@ -87,7 +87,7 @@ export const TreasuryAuditView: React.FC<Props> = ({ state }) => {
         <div className="nq-panel rounded-xl p-4 space-y-1">
           <div className="text-[11px] text-slate-400 flex items-center justify-between">
             <span>Master Pool Total</span>
-            <Landmark className="w-3.5 h-3.5 text-[#00E5FF]" />
+            <Landmark className="w-3.5 h-3.5 text-[#ff3555]" />
           </div>
           <div className="text-lg sm:text-xl font-mono font-semibold text-white">
             {fmtDec(masterPool?.total_capital)} {masterPool?.asset || 'USDT'}
@@ -110,7 +110,7 @@ export const TreasuryAuditView: React.FC<Props> = ({ state }) => {
         <div className="nq-panel rounded-xl p-4 space-y-1">
           <div className="text-[11px] text-slate-400 flex items-center justify-between">
             <span>18-Agent Slots</span>
-            <Users className="w-3.5 h-3.5 text-[#8B5CF6]" />
+            <Users className="w-3.5 h-3.5 text-[#ff6375]" />
           </div>
           <div className="text-lg sm:text-xl font-mono font-semibold text-white">
             {treasury.configured_slots ?? slots.length} / {treasury.max_agent_slots ?? 18}
@@ -145,7 +145,7 @@ export const TreasuryAuditView: React.FC<Props> = ({ state }) => {
       <div className="nq-panel rounded-xl p-4 sm:p-5 space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-white/[0.08]">
           <div className="flex items-center gap-2">
-            <FileCheck2 className="w-4 h-4 text-[#00E5FF]" />
+            <FileCheck2 className="w-4 h-4 text-[#ff3555]" />
             <h3 className="text-sm font-display font-semibold text-white">
               Paper PnL Reconciliation Audit
             </h3>
@@ -177,19 +177,19 @@ export const TreasuryAuditView: React.FC<Props> = ({ state }) => {
         {pnlAudit ? (
           <div className="space-y-4">
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 text-xs font-mono">
-              <div className="bg-[#05080F] border border-white/[0.06] rounded-lg p-3">
+              <div className="bg-[#080305] border border-white/[0.06] rounded-lg p-3">
                 <div className="text-[11px] text-slate-400">Account Realized</div>
                 <div className="text-sm font-semibold text-white mt-1">
                   ${fmtDec(pnlAudit.account_realized_usd, 4)}
                 </div>
               </div>
-              <div className="bg-[#05080F] border border-white/[0.06] rounded-lg p-3">
+              <div className="bg-[#080305] border border-white/[0.06] rounded-lg p-3">
                 <div className="text-[11px] text-slate-400">Attributed Realized</div>
-                <div className="text-sm font-semibold text-[#00E5FF] mt-1">
+                <div className="text-sm font-semibold text-[#ff3555] mt-1">
                   ${fmtDec(pnlAudit.attributed_realized_usd, 4)}
                 </div>
               </div>
-              <div className="bg-[#05080F] border border-white/[0.06] rounded-lg p-3">
+              <div className="bg-[#080305] border border-white/[0.06] rounded-lg p-3">
                 <div className="text-[11px] text-slate-400">Unexplained Delta</div>
                 <div
                   className={`text-sm font-semibold mt-1 ${
@@ -199,19 +199,19 @@ export const TreasuryAuditView: React.FC<Props> = ({ state }) => {
                   ${fmtDec(pnlAudit.unexplained_usd, 4)}
                 </div>
               </div>
-              <div className="bg-[#05080F] border border-white/[0.06] rounded-lg p-3">
+              <div className="bg-[#080305] border border-white/[0.06] rounded-lg p-3">
                 <div className="text-[11px] text-slate-400">Paper Fills / Fees</div>
                 <div className="text-sm font-semibold text-slate-200 mt-1">
                   {pnlAudit.paper_fills} / {pnlAudit.fee_attributions}
                 </div>
               </div>
-              <div className="bg-[#05080F] border border-white/[0.06] rounded-lg p-3">
+              <div className="bg-[#080305] border border-white/[0.06] rounded-lg p-3">
                 <div className="text-[11px] text-slate-400">Closures / Attrib</div>
                 <div className="text-sm font-semibold text-slate-200 mt-1">
                   {pnlAudit.recorded_closures} / {pnlAudit.closure_attributions}
                 </div>
               </div>
-              <div className="bg-[#05080F] border border-white/[0.06] rounded-lg p-3">
+              <div className="bg-[#080305] border border-white/[0.06] rounded-lg p-3">
                 <div className="text-[11px] text-slate-400">Funding / Attrib</div>
                 <div className="text-sm font-semibold text-slate-200 mt-1">
                   {pnlAudit.funding_settlements} / {pnlAudit.funding_attributions}
@@ -220,7 +220,7 @@ export const TreasuryAuditView: React.FC<Props> = ({ state }) => {
             </div>
 
             {pnlAudit.reason && (
-              <div className="text-xs text-slate-300 bg-[#05080F] border border-white/[0.06] rounded-lg px-3 py-2 flex items-start gap-2">
+              <div className="text-xs text-slate-300 bg-[#080305] border border-white/[0.06] rounded-lg px-3 py-2 flex items-start gap-2">
                 <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
                 <span>{pnlAudit.reason}</span>
               </div>
@@ -249,8 +249,8 @@ export const TreasuryAuditView: React.FC<Props> = ({ state }) => {
                 onClick={() => setExchangeFilter(ex)}
                 className={`px-2.5 py-1.5 rounded-lg text-[11px] font-medium border transition-colors ${
                   exchangeFilter === ex
-                    ? 'bg-[#00E5FF]/15 border-[#00E5FF]/40 text-[#00E5FF]'
-                    : 'bg-[#05080F] border-white/[0.08] text-slate-400 hover:text-white'
+                    ? 'bg-[#ff3555]/15 border-[#ff3555]/40 text-[#ff3555]'
+                    : 'bg-[#080305] border-white/[0.08] text-slate-400 hover:text-white'
                 }`}
               >
                 {ex === 'all' ? 'All Exchanges' : ex.toUpperCase()}
@@ -262,8 +262,8 @@ export const TreasuryAuditView: React.FC<Props> = ({ state }) => {
                 onClick={() => setStatusFilter(st)}
                 className={`px-2.5 py-1.5 rounded-lg text-[11px] font-medium border transition-colors ${
                   statusFilter === st
-                    ? 'bg-[#8B5CF6]/20 border-[#8B5CF6]/40 text-[#C4B5FD]'
-                    : 'bg-[#05080F] border-white/[0.08] text-slate-400 hover:text-white'
+                    ? 'bg-[#ff6375]/20 border-[#ff6375]/40 text-[#ffe3e5]'
+                    : 'bg-[#080305] border-white/[0.08] text-slate-400 hover:text-white'
                 }`}
               >
                 {st.toUpperCase()}
@@ -335,7 +335,7 @@ export const TreasuryAuditView: React.FC<Props> = ({ state }) => {
           {filteredSlots.map((slot) => (
             <div
               key={slot.agent_id}
-              className="bg-[#05080F] border border-white/[0.08] rounded-xl p-3 space-y-2 text-xs font-mono"
+              className="bg-[#080305] border border-white/[0.08] rounded-xl p-3 space-y-2 text-xs font-mono"
             >
               <div className="flex items-center justify-between">
                 <span className="text-white font-semibold">
@@ -378,7 +378,7 @@ export const TreasuryAuditView: React.FC<Props> = ({ state }) => {
         <div className="nq-panel rounded-xl p-4 sm:p-5 space-y-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <Wallet className="w-4 h-4 text-[#00E5FF]" />
+              <Wallet className="w-4 h-4 text-[#ff3555]" />
               <h3 className="text-sm font-display font-semibold text-white">
                 Exchange Read-Only Balance Snapshots
               </h3>
@@ -393,7 +393,7 @@ export const TreasuryAuditView: React.FC<Props> = ({ state }) => {
               return (
                 <div
                   key={exId}
-                  className="bg-[#05080F] border border-white/[0.08] rounded-xl p-3 space-y-2"
+                  className="bg-[#080305] border border-white/[0.08] rounded-xl p-3 space-y-2"
                 >
                   <div className="flex items-center justify-between text-xs font-mono">
                     <span className="font-semibold text-white">{exId.toUpperCase()}</span>

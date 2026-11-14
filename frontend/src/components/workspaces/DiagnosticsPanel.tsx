@@ -7,15 +7,19 @@ export function freshnessLabel(value: Freshness): string {
 
 export function DiagnosticsContent({ data, section }: { data: PaperDiagnostics; section: string }) {
   return <section aria-label="Paper diagnostics" className="nq-panel rounded-xl p-4 mb-6 min-w-0 space-y-3">
-    <h2 className="text-sm font-semibold text-white">PAPER_ONLY · Read-only diagnostics</h2>
-    <p className="text-xs text-slate-400">All-time ledger · Updated {new Date(data.generated_at).toLocaleString()}</p>
+    <h2 className="text-sm font-semibold text-[#ffe3e5]">PAPER_ONLY · Read-only diagnostics</h2>
+    <p className="text-xs text-[#d4a5ac]">All-time ledger · Updated {new Date(data.generated_at).toLocaleString()}</p>
     {section === 'system' && <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
       <p>Engine cycle: {freshnessLabel(data.system.cycle)}</p>
-      <p>Validation observation: {freshnessLabel(data.system.observation)}</p>
+      <div>
+        <p>Validation observation: {freshnessLabel(data.system.observation)}</p>
+        <p>Observed ledger: {data.system.observation.ledger_status || 'unknown'}</p>
+        {data.system.observation.window_complete && <p>Observation window complete</p>}
+      </div>
     </div>}
     {['orders', 'analytics', 'risk'].includes(section) && <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-      {Object.entries(data.exchanges).map(([exchange, metrics]) => <article key={exchange} className="rounded-lg border border-white/10 p-3 min-w-0 text-xs space-y-2">
-        <h3 className="uppercase font-semibold text-cyan-300">{exchange}</h3>
+      {Object.entries(data.exchanges).map(([exchange, metrics]) => <article key={exchange} className="rounded-lg border border-[#ff3555]/25 bg-[#080305]/70 p-3 min-w-0 text-xs space-y-2">
+        <h3 className="uppercase font-semibold text-[#ff6375]">{exchange}</h3>
         {section === 'analytics' ? <>
           <p>Realized net PnL: ${metrics.realized_pnl_usd.toFixed(2)}</p>
           <p>Unrealized PnL: ${metrics.unrealized_pnl_usd.toFixed(2)}</p>

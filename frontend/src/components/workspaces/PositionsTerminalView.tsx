@@ -90,7 +90,7 @@ export const PositionsTerminalView: React.FC<PositionsTerminalViewProps> = ({
         actions={
           <div className="text-right font-mono">
             <div className="text-[11px] text-slate-400 font-sans">Filtered Exposure</div>
-            <div className="text-base font-bold text-[#00E5FF]">{formatUsd(totalExposure)}</div>
+            <div className="text-base font-bold text-[#ff3555]">{formatUsd(totalExposure)}</div>
           </div>
         }
       />
@@ -99,14 +99,14 @@ export const PositionsTerminalView: React.FC<PositionsTerminalViewProps> = ({
       <div className="nq-panel rounded-xl p-4 space-y-3">
         <div className="flex flex-wrap items-center gap-3 justify-between">
           {/* Exchange Selector */}
-          <div className="flex items-center p-1 rounded-lg bg-[#05080F] border border-white/[0.08]">
+          <div className="flex items-center p-1 rounded-lg bg-[#080305] border border-white/[0.08]">
             {(['all', 'binance', 'bybit', 'okx'] as const).map((ex) => (
               <button
                 key={ex}
                 onClick={() => setExchangeFilter(ex)}
                 className={`px-3 py-1.5 min-h-[36px] rounded-md text-xs font-medium uppercase whitespace-nowrap shrink-0 transition-colors ${
                   exchangeFilter === ex
-                    ? 'bg-[#00E5FF]/20 text-[#00E5FF]'
+                    ? 'bg-[#ff3555]/20 text-[#ff3555]'
                     : 'text-slate-400 hover:text-white'
                 }`}
               >
@@ -116,7 +116,7 @@ export const PositionsTerminalView: React.FC<PositionsTerminalViewProps> = ({
           </div>
 
           {/* Account Mode Selector (Paper vs Live Read-Only) */}
-          <div className="flex items-center p-1 rounded-lg bg-[#05080F] border border-white/[0.08]">
+          <div className="flex items-center p-1 rounded-lg bg-[#080305] border border-white/[0.08]">
             <button
               onClick={() => setAccountMode('paper')}
               className={`px-3 py-1.5 min-h-[36px] rounded-md text-xs font-medium whitespace-nowrap shrink-0 transition-colors ${
@@ -140,12 +140,12 @@ export const PositionsTerminalView: React.FC<PositionsTerminalViewProps> = ({
           </div>
 
           {/* Market Type Selector (Spot vs Futures) */}
-          <div className="flex items-center p-1 rounded-lg bg-[#05080F] border border-white/[0.08]">
+          <div className="flex items-center p-1 rounded-lg bg-[#080305] border border-white/[0.08]">
             <button
               onClick={() => setMarketType('futures')}
               className={`px-3 py-1.5 min-h-[36px] rounded-md text-xs font-medium whitespace-nowrap shrink-0 transition-colors ${
                 marketType === 'futures'
-                  ? 'bg-[#8B5CF6]/25 text-white'
+                  ? 'bg-[#ff6375]/25 text-white'
                   : 'text-slate-400 hover:text-white'
               }`}
             >
@@ -155,7 +155,7 @@ export const PositionsTerminalView: React.FC<PositionsTerminalViewProps> = ({
               onClick={() => setMarketType('spot')}
               className={`px-3 py-1.5 min-h-[36px] rounded-md text-xs font-medium whitespace-nowrap shrink-0 transition-colors ${
                 marketType === 'spot'
-                  ? 'bg-[#8B5CF6]/25 text-white'
+                  ? 'bg-[#ff6375]/25 text-white'
                   : 'text-slate-400 hover:text-white'
               }`}
             >
@@ -167,7 +167,7 @@ export const PositionsTerminalView: React.FC<PositionsTerminalViewProps> = ({
         <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-white/[0.06]">
           {/* Status Selector (relevant for Futures) */}
           {marketType === 'futures' ? (
-            <div className="flex items-center p-1 rounded-lg bg-[#05080F] border border-white/[0.08]">
+            <div className="flex items-center p-1 rounded-lg bg-[#080305] border border-white/[0.08]">
               {(['open', 'closed', 'historical'] as PositionStatus[]).map((st) => (
                 <button
                   key={st}
@@ -195,16 +195,16 @@ export const PositionsTerminalView: React.FC<PositionsTerminalViewProps> = ({
                 value={symbolSearch}
                 onChange={(e) => setSymbolSearch(e.target.value)}
                 placeholder="Filter symbol..."
-                className="w-full pl-9 pr-3 py-1.5 min-h-[38px] rounded-lg bg-[#05080F] border border-white/[0.1] text-xs text-white placeholder-slate-500 focus:outline-none focus:border-[#00E5FF]"
+                className="w-full pl-9 pr-3 py-1.5 min-h-[38px] rounded-lg bg-[#080305] border border-white/[0.1] text-xs text-white placeholder-slate-500 focus:outline-none focus:border-[#ff3555]"
               />
             </div>
 
             {marketType === 'futures' && (
               <button
                 onClick={() => toggleSort(sortBy === 'notional' ? 'pnl' : sortBy === 'pnl' ? 'symbol' : 'notional')}
-                className="px-3 py-1.5 min-h-[38px] rounded-lg bg-[#05080F] border border-white/[0.1] text-xs text-slate-300 hover:text-white flex items-center gap-1.5 whitespace-nowrap shrink-0"
+                className="px-3 py-1.5 min-h-[38px] rounded-lg bg-[#080305] border border-white/[0.1] text-xs text-slate-300 hover:text-white flex items-center gap-1.5 whitespace-nowrap shrink-0"
               >
-                <ArrowUpDown className="w-3.5 h-3.5 text-[#00E5FF]" />
+                <ArrowUpDown className="w-3.5 h-3.5 text-[#ff3555]" />
                 <span className="capitalize">Sort: {sortBy}</span>
               </button>
             )}
@@ -242,7 +242,7 @@ export const PositionsTerminalView: React.FC<PositionsTerminalViewProps> = ({
                 );
                 return (
                   <div key={exId} className="nq-panel rounded-xl overflow-hidden">
-                    <div className="px-4 py-3 border-b border-white/[0.08] bg-[#0B1120] flex flex-wrap items-center justify-between gap-2">
+                    <div className="px-4 py-3 border-b border-white/[0.08] bg-[#120508] flex flex-wrap items-center justify-between gap-2">
                       <div className="flex items-center gap-2 text-sm font-display font-semibold">
                         <span className={meta.accentText}>{meta.name}</span>
                         <span className="text-slate-300">Live Read-Only Snapshot</span>
@@ -342,7 +342,7 @@ export const PositionsTerminalView: React.FC<PositionsTerminalViewProps> = ({
 
               return (
                 <div key={exId} className="nq-panel rounded-xl overflow-hidden">
-                  <div className="px-4 py-3 border-b border-white/[0.08] bg-[#0B1120] flex items-center justify-between">
+                  <div className="px-4 py-3 border-b border-white/[0.08] bg-[#120508] flex items-center justify-between">
                     <div className="flex items-center gap-2 text-sm font-display font-semibold">
                       <span className={meta.accentText}>{meta.name}</span>
                       <span className="text-slate-300">Futures ({statusFilter})</span>
@@ -435,7 +435,7 @@ export const PositionsTerminalView: React.FC<PositionsTerminalViewProps> = ({
 
               return (
                 <div key={exId} className="nq-panel rounded-xl overflow-hidden">
-                  <div className="px-4 py-3 border-b border-white/[0.08] bg-[#0B1120] flex items-center justify-between">
+                  <div className="px-4 py-3 border-b border-white/[0.08] bg-[#120508] flex items-center justify-between">
                     <div className="flex items-center gap-2 text-sm font-display font-semibold">
                       <span className={meta.accentText}>{meta.name}</span>
                       <span className="text-slate-300">Spot Asset Inventory</span>

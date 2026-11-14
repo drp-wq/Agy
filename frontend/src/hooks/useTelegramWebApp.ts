@@ -85,8 +85,8 @@ export function useTelegramWebApp(): TelegramContextState {
     try {
       tg.ready();
       tg.expand();
-      tg.setHeaderColor?.('#05080F');
-      tg.setBackgroundColor?.('#05080F');
+      tg.setHeaderColor?.('#080305');
+      tg.setBackgroundColor?.('#080305');
     } catch {
       // Safe fallback outside Telegram client
     }
