@@ -39,6 +39,7 @@ import {
   StaleWarningStrip
 } from './components/common/TerminalPrimitives';
 
+const ActiveCampaignBrainView = lazy(() => import('./components/workspaces/ActiveCampaignBrainView').then(m => ({ default: m.ActiveCampaignBrainView })));
 const ActiveCampaignTradesView = lazy(() => import('./components/workspaces/ActiveCampaignTradesView').then(m => ({ default: m.ActiveCampaignTradesView })));
 const GlobalOverviewView = lazy(() =>
   import('./components/workspaces/GlobalOverviewView').then((m) => ({ default: m.GlobalOverviewView }))
@@ -457,7 +458,7 @@ export default function App() {
           {/* Independent Unified AI Brain & Account Workspace */}
           {activeSection === 'brain' && (
             <Suspense fallback={<LoadingTerminalSkeleton />}>
-              <UnifiedBrainAccountView initData={telegram.initData} />
+              <ActiveCampaignBrainView initData={telegram.initData} />
               <ReadOnlySecurityFooterNotice />
             </Suspense>
           )}
@@ -533,9 +534,9 @@ export default function App() {
                 )}
                 {activeSection === 'positions' && <ActiveCampaignTradesView kind="positions" initData={telegram.initData} />}
                 {activeSection === 'orders' && <ActiveCampaignTradesView kind="orders" initData={telegram.initData} />}
-                {activeSection === 'analytics' && <PortfolioAnalyticsView state={state} />}
-                {activeSection === 'risk' && <RiskCommandView state={state} health={health} />}
-                {activeSection === 'treasury' && <TreasuryAuditView state={state} initData={telegram.initData} />}
+                {activeSection === 'analytics' && <ActiveCampaignTradesView kind="positions" initData={telegram.initData} />}
+                {activeSection === 'risk' && <ActiveCampaignBrainView initData={telegram.initData} />}
+                {activeSection === 'treasury' && <ActiveCampaignBrainView initData={telegram.initData} />}
                 {activeSection === 'alerts' && <TelegramAlertsView state={state} telegram={telegram} />}
                 {activeSection === 'system' && (
                   <SystemHealthView health={health} isDemo={isDemo} initData={telegram.initData} onRefresh={() => fetchAll(false)} />
