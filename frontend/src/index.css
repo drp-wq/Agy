@@ -27,6 +27,8 @@
     color: #ffe3e5;
     font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
     overscroll-behavior-y: contain;
+    /* Prevent decorative effects from extending the iPad page viewport. */
+    overflow-x: clip;
   }
 
   body {
