@@ -544,9 +544,10 @@ export default function App() {
                   <PositionsTerminalView
                     state={state}
                     onInspectPosition={setInspectedPosition}
+                    initData={telegram.initData}
                   />
                 )}
-                {activeSection === 'orders' && <PaperOrdersView state={state} />}
+                {activeSection === 'orders' && <PaperOrdersView state={state} initData={telegram.initData} />}
                 {activeSection === 'analytics' && <PortfolioAnalyticsView state={state} />}
                 {activeSection === 'risk' && <RiskCommandView state={state} health={health} />}
                 {activeSection === 'treasury' && <TreasuryAuditView state={state} initData={telegram.initData} />}
@@ -668,8 +669,13 @@ export default function App() {
       {/* POSITION DETAIL DRAWER */}
       <Suspense fallback={null}>
         <PositionDetailDrawer
-          position={inspectedPosition}
+          position={
+            inspectedPosition
+              ? state?.futures_positions.find((p) => p.id === inspectedPosition.id) ?? inspectedPosition
+              : null
+          }
           onClose={() => setInspectedPosition(null)}
+          initData={telegram.initData}
           onOpenChart={(pos) => {
             setInspectedPosition(null);
             setInspectedChartOpp({

@@ -28,7 +28,7 @@ import {
   calculateVWAP,
   detectSupportResistance
 } from '../../utils/indicators';
-import { formatPrice } from '../../utils/formatters';
+import { formatPrice, formatSignedPct, formatSignedUsd } from '../../utils/formatters';
 import {
   CHART_REFRESH_MS,
   computeNextBackoffMs,
@@ -116,7 +116,7 @@ export const ProMarketChart: React.FC<ProMarketChartProps> = ({
   const [showVwap, setShowVwap] = useState(true);
   const [showBollinger, setShowBollinger] = useState(false);
   const [showSR, setShowSR] = useState(true);
-  const [oscillator, setOscillator] = useState<OscillatorMode>('rsi');
+  const [oscillator, setOscillator] = useState<OscillatorMode>(compact ? 'none' : 'rsi');
 
   // Crosshair OHLC readout
   const [hoveredBar, setHoveredBar] = useState<CandleBar | null>(null);
@@ -352,6 +352,11 @@ export const ProMarketChart: React.FC<ProMarketChartProps> = ({
     };
   }, [showEma, showVwap, showBollinger, isFullscreen, compact]);
 
+  const matchedPosition =
+    activePosition && activePosition.symbol === symbol && activePosition.exchange === exchange
+      ? activePosition
+      : null;
+
   // Update Main Chart series data in-place (preserves pan/zoom across live ticks)
   useEffect(() => {
     const chart = mainChartRef.current;
@@ -405,21 +410,21 @@ export const ProMarketChart: React.FC<ProMarketChartProps> = ({
       });
     }
 
-    if (activePosition && activePosition.symbol === symbol) {
+    if (matchedPosition) {
       priceLinesRef.current.push(
         candleSeries.createPriceLine({
-          price: activePosition.entry_price,
+          price: matchedPosition.entry_price,
           color: '#ff6375',
           lineWidth: 2,
           lineStyle: 0,
           axisLabelVisible: true,
-          title: `ENTRY (${activePosition.side})`
+          title: `ENTRY (${matchedPosition.side})`
         })
       );
-      if (activePosition.stop_loss) {
+      if (matchedPosition.stop_loss) {
         priceLinesRef.current.push(
           candleSeries.createPriceLine({
-            price: activePosition.stop_loss,
+            price: matchedPosition.stop_loss,
             color: '#EF4444',
             lineWidth: 1,
             lineStyle: 2,
@@ -428,15 +433,27 @@ export const ProMarketChart: React.FC<ProMarketChartProps> = ({
           })
         );
       }
-      if (activePosition.take_profit) {
+      if (matchedPosition.take_profit) {
         priceLinesRef.current.push(
           candleSeries.createPriceLine({
-            price: activePosition.take_profit,
+            price: matchedPosition.take_profit,
             color: '#10B981',
             lineWidth: 1,
             lineStyle: 2,
             axisLabelVisible: true,
             title: 'TP'
+          })
+        );
+      }
+      if (matchedPosition.liquidation_price !== null && matchedPosition.liquidation_price > 0) {
+        priceLinesRef.current.push(
+          candleSeries.createPriceLine({
+            price: matchedPosition.liquidation_price,
+            color: '#F59E0B',
+            lineWidth: 1,
+            lineStyle: 3,
+            axisLabelVisible: true,
+            title: 'LIQ'
           })
         );
       }
@@ -446,7 +463,7 @@ export const ProMarketChart: React.FC<ProMarketChartProps> = ({
       chart.timeScale().fitContent();
       shouldFitRef.current = false;
     }
-  }, [candles, indicators, showSR, activePosition, symbol]);
+  }, [candles, indicators, showSR, matchedPosition, symbol]);
 
   // Oscillator Sub-Chart instance
   useEffect(() => {
@@ -724,6 +741,53 @@ export const ProMarketChart: React.FC<ProMarketChartProps> = ({
           ))}
         </div>
       </div>
+
+      {matchedPosition && (
+        <div
+          data-testid="chart-active-position-strip"
+          className="px-4 py-1.5 bg-[#120508] border-b border-[#ff3555]/20 flex flex-wrap items-center justify-between gap-2 text-[11px] font-mono"
+        >
+          <div className="flex flex-wrap items-center gap-2.5">
+            <span className="px-1.5 py-0.5 rounded bg-[#ff3555]/20 text-[#ff6375] font-semibold uppercase text-[10px]">
+              {matchedPosition.status === 'open' ? 'Active Trade' : 'Closed Trade'}
+            </span>
+            <span className={matchedPosition.side === 'LONG' ? 'text-[#10B981] font-semibold' : 'text-[#EF4444] font-semibold'}>
+              {matchedPosition.side} {matchedPosition.leverage}x
+            </span>
+            <span className="text-[#c28e95]">
+              Entry <strong className="text-[#ffe3e5]">{formatPrice(matchedPosition.entry_price)}</strong>
+            </span>
+            <span className="text-[#c28e95]">
+              Mark <strong className="text-[#ffe3e5]">{formatPrice(matchedPosition.mark_price)}</strong>
+            </span>
+            <span className="text-[#c28e95]">
+              SL <strong className="text-[#EF4444]">{formatPrice(matchedPosition.stop_loss)}</strong>
+            </span>
+            <span className="text-[#c28e95]">
+              TP <strong className="text-[#10B981]">{formatPrice(matchedPosition.take_profit)}</strong>
+            </span>
+            {matchedPosition.liquidation_price !== null && matchedPosition.liquidation_price > 0 && (
+              <span className="text-[#c28e95]">
+                Liq <strong className="text-amber-400">{formatPrice(matchedPosition.liquidation_price)}</strong>
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            {(() => {
+              const pnlUsd =
+                matchedPosition.status === 'open'
+                  ? matchedPosition.unrealized_pnl_usd
+                  : matchedPosition.realized_pnl_usd;
+              return (
+                <span className={`font-semibold ${pnlUsd >= 0 ? 'text-[#10B981]' : 'text-[#EF4444]'}`}>
+                  {matchedPosition.status === 'open' ? 'uPnL' : 'rPnL'} {formatSignedUsd(pnlUsd)}
+                  {matchedPosition.status === 'open' ? ` (${formatSignedPct(matchedPosition.unrealized_pnl_pct)})` : ''}
+                </span>
+              );
+            })()}
+          </div>
+        </div>
+      )}
 
       {errorMsg && candles.length > 0 && (
         <div className="px-4 py-1.5 bg-[#ffb16c]/10 border-b border-[#ffb16c]/30 text-[11px] font-mono text-[#ffb16c] flex items-center justify-between gap-2">

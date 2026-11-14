@@ -4,15 +4,18 @@ import { ExchangeId, LIVE_EXECUTION_PERMANENTLY_DISABLED, LiveExecutionBlockedEr
 import { quantApi } from '../../services/quantApi';
 import { EXCHANGE_META, EmptyStatePanel, SectionHeader } from '../common/TerminalPrimitives';
 import { formatPrice, formatTimeShort, formatUsd } from '../../utils/formatters';
+import { EmbeddedSymbolChart, SymbolChartToggleButton } from '../charts/EmbeddedSymbolChart';
 
 interface PaperOrdersViewProps {
   state: MiniAppStateResponse;
+  initData?: string;
 }
 
-export const PaperOrdersView: React.FC<PaperOrdersViewProps> = ({ state }) => {
+export const PaperOrdersView: React.FC<PaperOrdersViewProps> = ({ state, initData }) => {
   const [exchangeFilter, setExchangeFilter] = useState<'all' | ExchangeId>('all');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'OPEN' | 'FILLED' | 'REJECTED'>('ALL');
   const [guardCheckResult, setGuardCheckResult] = useState<string | null>(null);
+  const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
 
   const filtered = state.orders.filter((o) => {
     const matchEx = exchangeFilter === 'all' || o.exchange === exchangeFilter;
@@ -158,52 +161,85 @@ export const PaperOrdersView: React.FC<PaperOrdersViewProps> = ({ state }) => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/[0.06]">
-                {filtered.map((ord) => (
-                  <tr key={ord.id} className="hover:bg-white/[0.02]">
-                    <td className="py-3 px-4">
-                      <div className="text-white font-semibold">{ord.id}</div>
-                      <div className="text-[10px] text-slate-400">{formatTimeShort(ord.created_at)}</div>
-                    </td>
-                    <td className="py-3 px-3">
-                      <div className={`font-semibold uppercase ${EXCHANGE_META[ord.exchange].accentText}`}>
-                        {ord.exchange} · <span className="text-white">{ord.symbol}</span>
-                      </div>
-                      <div className="text-[10px] text-slate-400 uppercase">{ord.market_type} · {ord.account_mode}</div>
-                    </td>
-                    <td className="py-3 px-3">
-                      <span className={ord.side === 'BUY' ? 'text-[#10B981]' : 'text-[#EF4444]'}>{ord.side}</span>{' '}
-                      <span className="text-slate-300">{ord.order_type}</span>
-                    </td>
-                    <td className="py-3 px-3">
-                      <span
-                        className={
-                          ord.status === 'FILLED'
-                            ? 'text-[#10B981]'
-                            : ord.status === 'OPEN'
-                            ? 'text-[#ff6375]'
-                            : ord.status === 'REJECTED'
-                            ? 'text-[#EF4444]'
-                            : 'text-slate-400'
-                        }
-                      >
-                        {ord.status}
-                      </span>
-                    </td>
-                    <td className="py-3 px-3 text-right">
-                      <div className="text-slate-300">{formatPrice(ord.price)}</div>
-                      <div className="text-white">{formatPrice(ord.avg_fill_price)}</div>
-                    </td>
-                    <td className="py-3 px-3 text-right">
-                      <div className="text-white">{ord.quantity}</div>
-                      <div className="text-[10px] text-slate-400">{formatUsd(ord.notional_usd)}</div>
-                    </td>
-                    <td className="py-3 px-3 text-right">
-                      <div className="text-slate-200">{formatUsd(ord.fee_usd)}</div>
-                      <div className="text-[10px] text-slate-400">{ord.slippage_bps.toFixed(2)} bps</div>
-                    </td>
-                    <td className="py-3 px-4 text-slate-400 truncate max-w-[160px]">{ord.strategy_name}</td>
-                  </tr>
-                ))}
+                {filtered.map((ord) => {
+                  const isExpanded = expandedOrderId === ord.id;
+                  return (
+                    <React.Fragment key={ord.id}>
+                      <tr className="hover:bg-white/[0.02]">
+                        <td className="py-3 px-4">
+                          <div className="text-white font-semibold">{ord.id}</div>
+                          <div className="text-[10px] text-slate-400">{formatTimeShort(ord.created_at)}</div>
+                        </td>
+                        <td className="py-3 px-3">
+                          <div className={`flex items-center gap-2 font-semibold uppercase ${EXCHANGE_META[ord.exchange].accentText}`}>
+                            <span>
+                              {ord.exchange} · <span className="text-white">{ord.symbol}</span>
+                            </span>
+                            <SymbolChartToggleButton
+                              symbol={ord.symbol}
+                              expanded={isExpanded}
+                              onToggle={() => setExpandedOrderId((prev) => (prev === ord.id ? null : ord.id))}
+                            />
+                          </div>
+                          <div className="text-[10px] text-slate-400 uppercase">{ord.market_type} · {ord.account_mode}</div>
+                        </td>
+                        <td className="py-3 px-3">
+                          <span className={ord.side === 'BUY' ? 'text-[#10B981]' : 'text-[#EF4444]'}>{ord.side}</span>{' '}
+                          <span className="text-slate-300">{ord.order_type}</span>
+                        </td>
+                        <td className="py-3 px-3">
+                          <span
+                            className={
+                              ord.status === 'FILLED'
+                                ? 'text-[#10B981]'
+                                : ord.status === 'OPEN'
+                                ? 'text-[#ff6375]'
+                                : ord.status === 'REJECTED'
+                                ? 'text-[#EF4444]'
+                                : 'text-slate-400'
+                            }
+                          >
+                            {ord.status}
+                          </span>
+                        </td>
+                        <td className="py-3 px-3 text-right">
+                          <div className="text-slate-300">{formatPrice(ord.price)}</div>
+                          <div className="text-white">{formatPrice(ord.avg_fill_price)}</div>
+                        </td>
+                        <td className="py-3 px-3 text-right">
+                          <div className="text-white">{ord.quantity}</div>
+                          <div className="text-[10px] text-slate-400">{formatUsd(ord.notional_usd)}</div>
+                        </td>
+                        <td className="py-3 px-3 text-right">
+                          <div className="text-slate-200">{formatUsd(ord.fee_usd)}</div>
+                          <div className="text-[10px] text-slate-400">{ord.slippage_bps.toFixed(2)} bps</div>
+                        </td>
+                        <td className="py-3 px-4 text-slate-400 truncate max-w-[160px]">{ord.strategy_name}</td>
+                      </tr>
+                      {isExpanded && (
+                        <tr className="bg-[#080305]/90">
+                          <td colSpan={8} className="p-3">
+                            <EmbeddedSymbolChart
+                              exchange={ord.exchange}
+                              marketType={ord.market_type}
+                              symbol={ord.symbol}
+                              activePosition={
+                                state.futures_positions.find(
+                                  (p) =>
+                                    p.status === 'open' &&
+                                    p.exchange === ord.exchange &&
+                                    p.symbol === ord.symbol
+                                ) || null
+                              }
+                              initData={initData}
+                              onClose={() => setExpandedOrderId(null)}
+                            />
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
+                  );
+                })}
               </tbody>
             </table>
           </div>

@@ -4,17 +4,20 @@ import { X, LineChart, ShieldCheck } from 'lucide-react';
 import { FuturesPosition } from '../../types/quant';
 import { EXCHANGE_META } from '../common/TerminalPrimitives';
 import { formatPrice, formatSignedPct, formatSignedUsd, formatTimeShort, formatUsd } from '../../utils/formatters';
+import { EmbeddedSymbolChart } from '../charts/EmbeddedSymbolChart';
 
 interface PositionDetailDrawerProps {
   position: FuturesPosition | null;
   onClose: () => void;
   onOpenChart: (pos: FuturesPosition) => void;
+  initData?: string;
 }
 
 export const PositionDetailDrawer: React.FC<PositionDetailDrawerProps> = ({
   position,
   onClose,
-  onOpenChart
+  onOpenChart,
+  initData
 }) => {
   const chartRef = useRef<HTMLDivElement>(null);
 
@@ -72,7 +75,7 @@ export const PositionDetailDrawer: React.FC<PositionDetailDrawerProps> = ({
         role="dialog"
         aria-modal="true"
         aria-label="Position details"
-        className="w-full md:max-w-md bg-[#120508] border-t md:border-t-0 md:border-l border-[#ff3555]/30 rounded-t-2xl md:rounded-none p-5 pb-safe max-h-[88vh] md:max-h-full overflow-y-auto flex flex-col justify-between gap-5"
+        className="w-full md:max-w-lg bg-[#120508] border-t md:border-t-0 md:border-l border-[#ff3555]/30 rounded-t-2xl md:rounded-none p-5 pb-safe max-h-[88vh] md:max-h-full overflow-y-auto flex flex-col justify-between gap-5"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="space-y-5">
@@ -128,6 +131,15 @@ export const PositionDetailDrawer: React.FC<PositionDetailDrawerProps> = ({
               </div>
             )}
           </div>
+
+          {/* Embedded Trade Symbol Market Chart */}
+          <EmbeddedSymbolChart
+            exchange={position.exchange}
+            marketType="futures"
+            symbol={position.symbol}
+            activePosition={position}
+            initData={initData}
+          />
 
           {/* Position Intraday PnL Curve */}
           {position.pnl_history && position.pnl_history.length > 0 && (

@@ -9,6 +9,7 @@ import {
 } from '../../types/quant';
 import { EXCHANGE_META, EmptyStatePanel, SectionHeader } from '../common/TerminalPrimitives';
 import { ProMarketChart } from '../charts/ProMarketChart';
+import { EmbeddedSymbolChart, SymbolChartToggleButton } from '../charts/EmbeddedSymbolChart';
 import {
   formatAgeSeconds,
   formatPrice,
@@ -38,6 +39,11 @@ export const ExchangeWorkspaceView: React.FC<ExchangeWorkspaceViewProps> = ({
   const [chartMarket, setChartMarket] = useState<MarketType>('futures');
   const [chartSymbol, setChartSymbol] = useState<string>('BTC/USDT');
   const [chartTf, setChartTf] = useState<Timeframe>('15m');
+  const [expandedChartKey, setExpandedChartKey] = useState<string | null>(null);
+
+  const toggleEmbeddedChart = (key: string) => {
+    setExpandedChartKey((prev) => (prev === key ? null : key));
+  };
 
   const ex = state.exchanges[exchange];
   const meta = EXCHANGE_META[exchange];
@@ -231,52 +237,78 @@ export const ExchangeWorkspaceView: React.FC<ExchangeWorkspaceViewProps> = ({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/[0.06]">
-                  {futuresPositions.map((pos) => (
-                    <tr
-                      key={pos.id}
-                      onClick={() => onInspectPosition(pos)}
-                      className="hover:bg-white/[0.03] cursor-pointer transition-colors"
-                    >
-                      <td className="py-3 px-4">
-                        <div className="font-semibold text-white">{pos.instrument_id || pos.symbol}</div>
-                        <div className="text-[10px] text-slate-400 uppercase">
-                          {pos.account_mode} · {pos.margin_mode}
-                        </div>
-                      </td>
-                      <td className="py-3 px-3">
-                        <span className={pos.side === 'LONG' ? 'text-[#10B981] font-semibold' : 'text-[#EF4444] font-semibold'}>
-                          {pos.side}
-                        </span>{' '}
-                        <span className="text-slate-300">{pos.leverage}x</span>
-                      </td>
-                      <td className="py-3 px-3 text-right">
-                        <div className="text-white">{pos.quantity}</div>
-                        <div className="text-[10px] text-slate-400">{formatUsd(pos.notional_usd)}</div>
-                      </td>
-                      <td className="py-3 px-3 text-right">
-                        <div className="text-slate-300">{formatPrice(pos.entry_price)}</div>
-                        <div className="text-white">{formatPrice(pos.mark_price)}</div>
-                      </td>
-                      <td className="py-3 px-3 text-right">
-                        <div className="text-amber-400">{formatPrice(pos.liquidation_price)}</div>
-                        <div className="text-[10px] text-slate-500">
-                          {pos.liquidation_distance_pct ? `${pos.liquidation_distance_pct.toFixed(1)}% dist` : '—'}
-                        </div>
-                      </td>
-                      <td className="py-3 px-3 text-right">
-                        <div className={`font-semibold ${pos.unrealized_pnl_usd >= 0 ? 'text-[#10B981]' : 'text-[#EF4444]'}`}>
-                          {formatSignedUsd(pos.unrealized_pnl_usd)}
-                        </div>
-                        <div className={`text-[10px] ${pos.unrealized_pnl_pct >= 0 ? 'text-[#10B981]' : 'text-[#EF4444]'}`}>
-                          {formatSignedPct(pos.unrealized_pnl_pct)}
-                        </div>
-                      </td>
-                      <td className="py-3 px-4 text-right text-slate-300">
-                        <div>SL {formatPrice(pos.stop_loss)}</div>
-                        <div className="text-[#10B981]">TP {formatPrice(pos.take_profit)}</div>
-                      </td>
-                    </tr>
-                  ))}
+                  {futuresPositions.map((pos) => {
+                    const chartKey = `futures:${pos.id}`;
+                    const isExpanded = expandedChartKey === chartKey;
+                    return (
+                      <React.Fragment key={pos.id}>
+                        <tr
+                          onClick={() => onInspectPosition(pos)}
+                          className="hover:bg-white/[0.03] cursor-pointer transition-colors"
+                        >
+                          <td className="py-3 px-4">
+                            <div className="flex items-center gap-2">
+                              <span className="font-semibold text-white">{pos.instrument_id || pos.symbol}</span>
+                              <SymbolChartToggleButton
+                                symbol={pos.symbol}
+                                expanded={isExpanded}
+                                onToggle={() => toggleEmbeddedChart(chartKey)}
+                              />
+                            </div>
+                            <div className="text-[10px] text-slate-400 uppercase">
+                              {pos.account_mode} · {pos.margin_mode}
+                            </div>
+                          </td>
+                          <td className="py-3 px-3">
+                            <span className={pos.side === 'LONG' ? 'text-[#10B981] font-semibold' : 'text-[#EF4444] font-semibold'}>
+                              {pos.side}
+                            </span>{' '}
+                            <span className="text-slate-300">{pos.leverage}x</span>
+                          </td>
+                          <td className="py-3 px-3 text-right">
+                            <div className="text-white">{pos.quantity}</div>
+                            <div className="text-[10px] text-slate-400">{formatUsd(pos.notional_usd)}</div>
+                          </td>
+                          <td className="py-3 px-3 text-right">
+                            <div className="text-slate-300">{formatPrice(pos.entry_price)}</div>
+                            <div className="text-white">{formatPrice(pos.mark_price)}</div>
+                          </td>
+                          <td className="py-3 px-3 text-right">
+                            <div className="text-amber-400">{formatPrice(pos.liquidation_price)}</div>
+                            <div className="text-[10px] text-slate-500">
+                              {pos.liquidation_distance_pct ? `${pos.liquidation_distance_pct.toFixed(1)}% dist` : '—'}
+                            </div>
+                          </td>
+                          <td className="py-3 px-3 text-right">
+                            <div className={`font-semibold ${pos.unrealized_pnl_usd >= 0 ? 'text-[#10B981]' : 'text-[#EF4444]'}`}>
+                              {formatSignedUsd(pos.unrealized_pnl_usd)}
+                            </div>
+                            <div className={`text-[10px] ${pos.unrealized_pnl_pct >= 0 ? 'text-[#10B981]' : 'text-[#EF4444]'}`}>
+                              {formatSignedPct(pos.unrealized_pnl_pct)}
+                            </div>
+                          </td>
+                          <td className="py-3 px-4 text-right text-slate-300">
+                            <div>SL {formatPrice(pos.stop_loss)}</div>
+                            <div className="text-[#10B981]">TP {formatPrice(pos.take_profit)}</div>
+                          </td>
+                        </tr>
+                        {isExpanded && (
+                          <tr className="bg-[#080305]/90">
+                            <td colSpan={7} className="p-3">
+                              <EmbeddedSymbolChart
+                                exchange={pos.exchange}
+                                marketType="futures"
+                                symbol={pos.symbol}
+                                activePosition={pos}
+                                initData={initData}
+                                onClose={() => setExpandedChartKey(null)}
+                              />
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -362,43 +394,72 @@ export const ExchangeWorkspaceView: React.FC<ExchangeWorkspaceViewProps> = ({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/[0.06]">
-                  {exchangeOrders.map((ord) => (
-                    <tr key={ord.id} className="hover:bg-white/[0.02]">
-                      <td className="py-3 px-4">
-                        <div className="text-white font-semibold">{ord.symbol}</div>
-                        <div className="text-[10px] text-slate-400">{formatTimeShort(ord.created_at)}</div>
-                      </td>
-                      <td className="py-3 px-3">
-                        <span className={ord.side === 'BUY' ? 'text-[#10B981]' : 'text-[#EF4444]'}>{ord.side}</span>{' '}
-                        <span className="text-slate-300">{ord.order_type}</span>
-                      </td>
-                      <td className="py-3 px-3">
-                        <span
-                          className={
-                            ord.status === 'FILLED'
-                              ? 'text-[#10B981]'
-                              : ord.status === 'OPEN'
-                              ? 'text-[#ff6375]'
-                              : ord.status === 'REJECTED'
-                              ? 'text-[#EF4444]'
-                              : 'text-slate-400'
-                          }
-                        >
-                          {ord.status}
-                        </span>
-                      </td>
-                      <td className="py-3 px-3 text-right">
-                        {formatPrice(ord.price)} / {formatPrice(ord.avg_fill_price)}
-                      </td>
-                      <td className="py-3 px-3 text-right">
-                        {ord.quantity} / {ord.filled_quantity}
-                      </td>
-                      <td className="py-3 px-3 text-right text-slate-300">
-                        {formatUsd(ord.fee_usd)} · {ord.slippage_bps.toFixed(1)} bps
-                      </td>
-                      <td className="py-3 px-4 text-slate-400 truncate max-w-[160px]">{ord.strategy_name}</td>
-                    </tr>
-                  ))}
+                  {exchangeOrders.map((ord) => {
+                    const chartKey = `order:${ord.id}`;
+                    const isExpanded = expandedChartKey === chartKey;
+                    return (
+                      <React.Fragment key={ord.id}>
+                        <tr className="hover:bg-white/[0.02]">
+                          <td className="py-3 px-4">
+                            <div className="flex items-center gap-2">
+                              <span className="text-white font-semibold">{ord.symbol}</span>
+                              <SymbolChartToggleButton
+                                symbol={ord.symbol}
+                                expanded={isExpanded}
+                                onToggle={() => toggleEmbeddedChart(chartKey)}
+                              />
+                            </div>
+                            <div className="text-[10px] text-slate-400">{formatTimeShort(ord.created_at)}</div>
+                          </td>
+                          <td className="py-3 px-3">
+                            <span className={ord.side === 'BUY' ? 'text-[#10B981]' : 'text-[#EF4444]'}>{ord.side}</span>{' '}
+                            <span className="text-slate-300">{ord.order_type}</span>
+                          </td>
+                          <td className="py-3 px-3">
+                            <span
+                              className={
+                                ord.status === 'FILLED'
+                                  ? 'text-[#10B981]'
+                                  : ord.status === 'OPEN'
+                                  ? 'text-[#ff6375]'
+                                  : ord.status === 'REJECTED'
+                                  ? 'text-[#EF4444]'
+                                  : 'text-slate-400'
+                              }
+                            >
+                              {ord.status}
+                            </span>
+                          </td>
+                          <td className="py-3 px-3 text-right">
+                            {formatPrice(ord.price)} / {formatPrice(ord.avg_fill_price)}
+                          </td>
+                          <td className="py-3 px-3 text-right">
+                            {ord.quantity} / {ord.filled_quantity}
+                          </td>
+                          <td className="py-3 px-3 text-right text-slate-300">
+                            {formatUsd(ord.fee_usd)} · {ord.slippage_bps.toFixed(1)} bps
+                          </td>
+                          <td className="py-3 px-4 text-slate-400 truncate max-w-[160px]">{ord.strategy_name}</td>
+                        </tr>
+                        {isExpanded && (
+                          <tr className="bg-[#080305]/90">
+                            <td colSpan={7} className="p-3">
+                              <EmbeddedSymbolChart
+                                exchange={ord.exchange}
+                                marketType={ord.market_type}
+                                symbol={ord.symbol}
+                                activePosition={
+                                  futuresPositions.find((p) => p.symbol === ord.symbol) || null
+                                }
+                                initData={initData}
+                                onClose={() => setExpandedChartKey(null)}
+                              />
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

@@ -10,17 +10,20 @@ import {
 } from '../../types/quant';
 import { EXCHANGE_META, EmptyStatePanel, SectionHeader } from '../common/TerminalPrimitives';
 import { formatPrice, formatSignedPct, formatSignedUsd, formatUsd } from '../../utils/formatters';
+import { EmbeddedSymbolChart, SymbolChartToggleButton } from '../charts/EmbeddedSymbolChart';
 
 interface PositionsTerminalViewProps {
   state: MiniAppStateResponse;
   onInspectPosition: (pos: FuturesPosition) => void;
+  initData?: string;
 }
 
 type SortKey = 'notional' | 'pnl' | 'symbol';
 
 export const PositionsTerminalView: React.FC<PositionsTerminalViewProps> = ({
   state,
-  onInspectPosition
+  onInspectPosition,
+  initData
 }) => {
   const [exchangeFilter, setExchangeFilter] = useState<'all' | ExchangeId>('all');
   const [accountMode, setAccountMode] = useState<AccountMode>('paper');
@@ -29,6 +32,11 @@ export const PositionsTerminalView: React.FC<PositionsTerminalViewProps> = ({
   const [symbolSearch, setSymbolSearch] = useState('');
   const [sortBy, setSortBy] = useState<SortKey>('notional');
   const [sortAsc, setSortAsc] = useState(false);
+  const [expandedChartKey, setExpandedChartKey] = useState<string | null>(null);
+
+  const toggleEmbeddedChart = (key: string) => {
+    setExpandedChartKey((prev) => (prev === key ? null : key));
+  };
 
   const visibleExchanges: ExchangeId[] =
     exchangeFilter === 'all' ? ['binance', 'bybit', 'okx'] : [exchangeFilter];
@@ -299,19 +307,55 @@ export const PositionsTerminalView: React.FC<PositionsTerminalViewProps> = ({
                                   </tr>
                                 </thead>
                                 <tbody className="divide-y divide-white/[0.06]">
-                                  {filteredPos.map((lp, idx) => (
-                                    <tr key={`${lp.symbol}-${idx}`}>
-                                      <td className="py-2 pr-4 text-white font-semibold">{lp.symbol}</td>
-                                      <td className={`py-2 px-3 ${lp.side?.toUpperCase().includes('LONG') ? 'text-[#10B981]' : 'text-[#EF4444]'}`}>
-                                        {lp.side}
-                                      </td>
-                                      <td className="py-2 px-3 text-right text-slate-200">{lp.contracts}</td>
-                                      <td className="py-2 px-3 text-right text-slate-300">{formatPrice(lp.entry_price)}</td>
-                                      <td className={`py-2 pl-3 text-right font-semibold ${lp.unrealized_pnl >= 0 ? 'text-[#10B981]' : 'text-[#EF4444]'}`}>
-                                        {formatSignedUsd(lp.unrealized_pnl)}
-                                      </td>
-                                    </tr>
-                                  ))}
+                                  {filteredPos.map((lp, idx) => {
+                                    const chartKey = `live:${exId}:${lp.symbol}:${idx}`;
+                                    const isExpanded = expandedChartKey === chartKey;
+                                    return (
+                                      <React.Fragment key={`${lp.symbol}-${idx}`}>
+                                        <tr>
+                                          <td className="py-2 pr-4">
+                                            <div className="flex items-center gap-2">
+                                              <span className="text-white font-semibold">{lp.symbol}</span>
+                                              <SymbolChartToggleButton
+                                                symbol={lp.symbol}
+                                                expanded={isExpanded}
+                                                onToggle={() => toggleEmbeddedChart(chartKey)}
+                                              />
+                                            </div>
+                                          </td>
+                                          <td className={`py-2 px-3 ${lp.side?.toUpperCase().includes('LONG') ? 'text-[#10B981]' : 'text-[#EF4444]'}`}>
+                                            {lp.side}
+                                          </td>
+                                          <td className="py-2 px-3 text-right text-slate-200">{lp.contracts}</td>
+                                          <td className="py-2 px-3 text-right text-slate-300">{formatPrice(lp.entry_price)}</td>
+                                          <td className={`py-2 pl-3 text-right font-semibold ${lp.unrealized_pnl >= 0 ? 'text-[#10B981]' : 'text-[#EF4444]'}`}>
+                                            {formatSignedUsd(lp.unrealized_pnl)}
+                                          </td>
+                                        </tr>
+                                        {isExpanded && (
+                                          <tr className="bg-[#080305]/90">
+                                            <td colSpan={5} className="p-3">
+                                              <EmbeddedSymbolChart
+                                                exchange={exId}
+                                                marketType="futures"
+                                                symbol={lp.symbol}
+                                                activePosition={
+                                                  state.futures_positions.find(
+                                                    (p) =>
+                                                      p.status === 'open' &&
+                                                      p.exchange === exId &&
+                                                      p.symbol === lp.symbol
+                                                  ) || null
+                                                }
+                                                initData={initData}
+                                                onClose={() => setExpandedChartKey(null)}
+                                              />
+                                            </td>
+                                          </tr>
+                                        )}
+                                      </React.Fragment>
+                                    );
+                                  })}
                                 </tbody>
                               </table>
                             </div>
@@ -373,53 +417,77 @@ export const PositionsTerminalView: React.FC<PositionsTerminalViewProps> = ({
                         <tbody className="divide-y divide-white/[0.06]">
                           {exRows.map((pos) => {
                             const pnl = pos.status === 'open' ? pos.unrealized_pnl_usd : pos.realized_pnl_usd;
+                            const chartKey = `futures:${pos.id}`;
+                            const isExpanded = expandedChartKey === chartKey;
                             return (
-                              <tr
-                                key={pos.id}
-                                onClick={() => onInspectPosition(pos)}
-                                className="hover:bg-white/[0.03] cursor-pointer transition-colors"
-                              >
-                                <td className="py-3 px-4">
-                                  <div className="text-white font-semibold">{pos.symbol}</div>
-                                  <div className="text-[10px] text-slate-500">{pos.instrument_id}</div>
-                                </td>
-                                <td className="py-3 px-3">
-                                  <span className={pos.side === 'LONG' ? 'text-[#10B981]' : 'text-[#EF4444]'}>
-                                    {pos.side}
-                                  </span>{' '}
-                                  <span className="text-slate-300">{pos.leverage}x</span>
-                                </td>
-                                <td className="py-3 px-3 text-right">
-                                  <div className="text-white">{pos.quantity}</div>
-                                  <div className="text-[10px] text-slate-400">{formatUsd(pos.notional_usd)}</div>
-                                </td>
-                                <td className="py-3 px-3 text-right">
-                                  <div className="text-slate-300">{formatPrice(pos.entry_price)}</div>
-                                  <div className="text-white">{formatPrice(pos.mark_price)}</div>
-                                </td>
-                                <td className="py-3 px-3 text-right">
-                                  <div className="text-slate-200">{formatUsd(pos.margin_usd)}</div>
-                                  <div className="text-[10px] text-amber-400">
-                                    {pos.liquidation_distance_pct ? `${pos.liquidation_distance_pct.toFixed(1)}%` : 'Closed'}
-                                  </div>
-                                </td>
-                                <td className="py-3 px-3 text-right">
-                                  <div className={`font-semibold ${pnl >= 0 ? 'text-[#10B981]' : 'text-[#EF4444]'}`}>
-                                    {formatSignedUsd(pnl)}
-                                  </div>
-                                  {pos.status === 'open' && (
-                                    <div className={`text-[10px] ${pos.unrealized_pnl_pct >= 0 ? 'text-[#10B981]' : 'text-[#EF4444]'}`}>
-                                      {formatSignedPct(pos.unrealized_pnl_pct)}
+                              <React.Fragment key={pos.id}>
+                                <tr
+                                  onClick={() => onInspectPosition(pos)}
+                                  className="hover:bg-white/[0.03] cursor-pointer transition-colors"
+                                >
+                                  <td className="py-3 px-4">
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-white font-semibold">{pos.symbol}</span>
+                                      <SymbolChartToggleButton
+                                        symbol={pos.symbol}
+                                        expanded={isExpanded}
+                                        onToggle={() => toggleEmbeddedChart(chartKey)}
+                                      />
                                     </div>
-                                  )}
-                                </td>
-                                <td className="py-3 px-4 text-right text-slate-300">
-                                  <div>{pos.sl_tp_status}</div>
-                                  <div className="text-[10px] text-slate-500">
-                                    {formatPrice(pos.stop_loss)} / {formatPrice(pos.take_profit)}
-                                  </div>
-                                </td>
-                              </tr>
+                                    <div className="text-[10px] text-slate-500">{pos.instrument_id}</div>
+                                  </td>
+                                  <td className="py-3 px-3">
+                                    <span className={pos.side === 'LONG' ? 'text-[#10B981]' : 'text-[#EF4444]'}>
+                                      {pos.side}
+                                    </span>{' '}
+                                    <span className="text-slate-300">{pos.leverage}x</span>
+                                  </td>
+                                  <td className="py-3 px-3 text-right">
+                                    <div className="text-white">{pos.quantity}</div>
+                                    <div className="text-[10px] text-slate-400">{formatUsd(pos.notional_usd)}</div>
+                                  </td>
+                                  <td className="py-3 px-3 text-right">
+                                    <div className="text-slate-300">{formatPrice(pos.entry_price)}</div>
+                                    <div className="text-white">{formatPrice(pos.mark_price)}</div>
+                                  </td>
+                                  <td className="py-3 px-3 text-right">
+                                    <div className="text-slate-200">{formatUsd(pos.margin_usd)}</div>
+                                    <div className="text-[10px] text-amber-400">
+                                      {pos.liquidation_distance_pct ? `${pos.liquidation_distance_pct.toFixed(1)}%` : 'Closed'}
+                                    </div>
+                                  </td>
+                                  <td className="py-3 px-3 text-right">
+                                    <div className={`font-semibold ${pnl >= 0 ? 'text-[#10B981]' : 'text-[#EF4444]'}`}>
+                                      {formatSignedUsd(pnl)}
+                                    </div>
+                                    {pos.status === 'open' && (
+                                      <div className={`text-[10px] ${pos.unrealized_pnl_pct >= 0 ? 'text-[#10B981]' : 'text-[#EF4444]'}`}>
+                                        {formatSignedPct(pos.unrealized_pnl_pct)}
+                                      </div>
+                                    )}
+                                  </td>
+                                  <td className="py-3 px-4 text-right text-slate-300">
+                                    <div>{pos.sl_tp_status}</div>
+                                    <div className="text-[10px] text-slate-500">
+                                      {formatPrice(pos.stop_loss)} / {formatPrice(pos.take_profit)}
+                                    </div>
+                                  </td>
+                                </tr>
+                                {isExpanded && (
+                                  <tr className="bg-[#080305]/90">
+                                    <td colSpan={7} className="p-3">
+                                      <EmbeddedSymbolChart
+                                        exchange={pos.exchange}
+                                        marketType="futures"
+                                        symbol={pos.symbol}
+                                        activePosition={pos}
+                                        initData={initData}
+                                        onClose={() => setExpandedChartKey(null)}
+                                      />
+                                    </td>
+                                  </tr>
+                                )}
+                              </React.Fragment>
                             );
                           })}
                         </tbody>
@@ -464,25 +532,62 @@ export const PositionsTerminalView: React.FC<PositionsTerminalViewProps> = ({
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-white/[0.06]">
-                          {exSpot.map((h) => (
-                            <tr key={h.id} className="hover:bg-white/[0.02]">
-                              <td className="py-3 px-4 font-semibold text-white">{h.asset}</td>
-                              <td className="py-3 px-3 text-right text-slate-300">{h.available}</td>
-                              <td className="py-3 px-3 text-right text-slate-400">{h.locked}</td>
-                              <td className="py-3 px-3 text-right text-white">{h.total}</td>
-                              <td className="py-3 px-3 text-right text-slate-300">{formatPrice(h.mark_price)}</td>
-                              <td className="py-3 px-3 text-right text-white">{formatUsd(h.valuation_usd)}</td>
-                              <td className="py-3 px-4 text-right">
-                                {h.unrealized_pnl_usd !== null ? (
-                                  <span className={h.unrealized_pnl_usd >= 0 ? 'text-[#10B981]' : 'text-[#EF4444]'}>
-                                    {formatSignedUsd(h.unrealized_pnl_usd)}
-                                  </span>
-                                ) : (
-                                  '—'
+                          {exSpot.map((h) => {
+                            const spotSymbol = h.symbol || `${h.asset}/USDT`;
+                            const chartKey = `spot:${h.id}`;
+                            const isExpanded = expandedChartKey === chartKey;
+                            return (
+                              <React.Fragment key={h.id}>
+                                <tr className="hover:bg-white/[0.02]">
+                                  <td className="py-3 px-4 font-semibold text-white">
+                                    <div className="flex items-center gap-2">
+                                      <span>{h.asset}</span>
+                                      <SymbolChartToggleButton
+                                        symbol={spotSymbol}
+                                        expanded={isExpanded}
+                                        onToggle={() => toggleEmbeddedChart(chartKey)}
+                                      />
+                                    </div>
+                                  </td>
+                                  <td className="py-3 px-3 text-right text-slate-300">{h.available}</td>
+                                  <td className="py-3 px-3 text-right text-slate-400">{h.locked}</td>
+                                  <td className="py-3 px-3 text-right text-white">{h.total}</td>
+                                  <td className="py-3 px-3 text-right text-slate-300">{formatPrice(h.mark_price)}</td>
+                                  <td className="py-3 px-3 text-right text-white">{formatUsd(h.valuation_usd)}</td>
+                                  <td className="py-3 px-4 text-right">
+                                    {h.unrealized_pnl_usd !== null ? (
+                                      <span className={h.unrealized_pnl_usd >= 0 ? 'text-[#10B981]' : 'text-[#EF4444]'}>
+                                        {formatSignedUsd(h.unrealized_pnl_usd)}
+                                      </span>
+                                    ) : (
+                                      '—'
+                                    )}
+                                  </td>
+                                </tr>
+                                {isExpanded && (
+                                  <tr className="bg-[#080305]/90">
+                                    <td colSpan={7} className="p-3">
+                                      <EmbeddedSymbolChart
+                                        exchange={h.exchange}
+                                        marketType="spot"
+                                        symbol={spotSymbol}
+                                        activePosition={
+                                          state.futures_positions.find(
+                                            (p) =>
+                                              p.status === 'open' &&
+                                              p.exchange === h.exchange &&
+                                              p.symbol === spotSymbol
+                                          ) || null
+                                        }
+                                        initData={initData}
+                                        onClose={() => setExpandedChartKey(null)}
+                                      />
+                                    </td>
+                                  </tr>
                                 )}
-                              </td>
-                            </tr>
-                          ))}
+                              </React.Fragment>
+                            );
+                          })}
                         </tbody>
                       </table>
                     </div>
