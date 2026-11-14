@@ -488,7 +488,7 @@ export default function App() {
                 {activeSection === 'treasury' && <TreasuryAuditView state={state} />}
                 {activeSection === 'alerts' && <TelegramAlertsView state={state} telegram={telegram} />}
                 {activeSection === 'system' && (
-                  <SystemHealthView health={health} isDemo={isDemo} onRefresh={() => fetchAll(false)} />
+                  <SystemHealthView health={health} isDemo={isDemo} initData={telegram.initData} onRefresh={() => fetchAll(false)} />
                 )}
 
                 <ReadOnlySecurityFooterNotice />

@@ -17,7 +17,25 @@ describe('violetResearchApi authenticated read-only client', () => {
           dataset: 'jupiter_sol_usdc',
           observations: 12,
           stale: false,
-          mean_conservative_net_lamports: -420
+          latest_age_seconds: 2.3,
+          mean_gross_lamports: 500,
+          mean_conservative_net_lamports: -420,
+          median_conservative_net_lamports: -430,
+          positive_conservative_quotes: 0,
+          cost_assumptions: { network_fee_lamports: 15000, slippage_bps_per_leg: 10 }
+        }
+      ],
+      funding: [
+        {
+          dataset: 'hyperliquid_7d.csv',
+          gross_funding_usd: 2.12,
+          fees_usd: 20,
+          net_pnl_usd: -17.88,
+          hours: 168,
+          observations: 168,
+          coverage_pct: 100,
+          assumption: 'continuous_hold_no_rebalance',
+          warning: 'Not realized PnL'
         }
       ],
       blockers: [],

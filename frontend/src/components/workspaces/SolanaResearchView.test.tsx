@@ -12,8 +12,31 @@ const healthySolana: SolanaSummaryPayload = {
   verdict: 'NOT PROVEN PROFITABLE',
   observations: 18,
   routes: [
-    { dataset: 'jupiter_sol_usdc', observations: 10, stale: false, mean_conservative_net_lamports: -150 },
+    {
+      dataset: 'jupiter_sol_usdc',
+      observations: 10,
+      stale: false,
+      latest_age_seconds: 2.3,
+      mean_gross_lamports: 450,
+      mean_conservative_net_lamports: -150,
+      median_conservative_net_lamports: -160,
+      positive_conservative_quotes: 0,
+      cost_assumptions: { network_fee_lamports: 15000, slippage_bps_per_leg: 10 }
+    },
     { dataset: 'raydium_bonk_sol', observations: 8, stale: true, mean_conservative_net_lamports: null }
+  ],
+  funding: [
+    {
+      dataset: 'hyperliquid_7d.csv',
+      gross_funding_usd: 2.12,
+      fees_usd: 20,
+      net_pnl_usd: -17.88,
+      hours: 168,
+      observations: 168,
+      coverage_pct: 100,
+      assumption: 'continuous_hold_no_rebalance',
+      warning: null
+    }
   ],
   blockers: ['slippage_model_conservative'],
   alerts: ['Profitability is not proven; estimates are not realized trading P&L']
@@ -54,6 +77,10 @@ describe('SolanaResearchContent', () => {
     expect(html).toContain('NOT PROVEN PROFITABLE');
     expect(html).toContain('jupiter_sol_usdc');
     expect(html).toContain('-150 lamports');
+    expect(html).toContain('450 lamports');
+    expect(html).toContain('2.3s');
+    expect(html).toContain('hyperliquid_7d.csv');
+    expect(html).toContain('$-17.88');
     expect(html).toContain('raydium_bonk_sol');
     expect(html).toContain('Unavailable');
     expect(html).toContain('STALE');

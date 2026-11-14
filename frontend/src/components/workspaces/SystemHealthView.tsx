@@ -1,21 +1,44 @@
-import React, { useState } from 'react';
-import { Server, ShieldCheck, RefreshCw, Terminal, CheckCircle2, AlertTriangle } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { Server, ShieldCheck, RefreshCw, Terminal, CheckCircle2, AlertTriangle, Activity } from 'lucide-react';
 import { ExchangeId, MiniAppHealthResponse, LIVE_EXECUTION_PERMANENTLY_DISABLED } from '../../types/quant';
 import { EXCHANGE_META, SectionHeader } from '../common/TerminalPrimitives';
 import { formatAgeSeconds, formatDuration } from '../../utils/formatters';
+import { fetchVioletResearch, VioletResearchPayload } from '../../services/violetResearchApi';
 
 interface SystemHealthViewProps {
   health: MiniAppHealthResponse | null;
   isDemo: boolean;
+  initData?: string;
   onRefresh: () => void;
 }
 
 export const SystemHealthView: React.FC<SystemHealthViewProps> = ({
   health,
   isDemo,
+  initData,
   onRefresh
 }) => {
   const [showIntegrationSpec, setShowIntegrationSpec] = useState(false);
+  const [violetResearch, setVioletResearch] = useState<VioletResearchPayload | null>(null);
+  const [violetError, setVioletError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetchVioletResearch(initData, controller.signal)
+      .then((res) => {
+        if (!controller.signal.aborted) {
+          setVioletResearch(res);
+          setVioletError(null);
+        }
+      })
+      .catch((err) => {
+        if (err instanceof DOMException && err.name === 'AbortError') return;
+        if (!controller.signal.aborted) {
+          setVioletError(err instanceof Error ? err.message : 'Campaign status unavailable');
+        }
+      });
+    return () => controller.abort();
+  }, [initData]);
 
   return (
     <div className="space-y-6">
@@ -156,6 +179,54 @@ export const SystemHealthView: React.FC<SystemHealthViewProps> = ({
             </tbody>
           </table>
         </div>
+      </div>
+
+      {/* 72-Hour VIOLET All-Cap Campaign & Isolation Status */}
+      <div className="nq-panel rounded-xl p-4 space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-[#ff3555]/20">
+          <h3 className="text-sm font-semibold text-[#ffe3e5] flex items-center gap-2">
+            <Activity className="w-4 h-4 text-[#ff6375]" />
+            <span>72-Hour VIOLET Paper Campaign &amp; Ledger Isolation</span>
+          </h3>
+          <span className="text-[11px] font-mono text-[#10B981]">
+            {violetResearch ? violetResearch.accounting : 'READ-ONLY'}
+          </span>
+        </div>
+        {violetError ? (
+          <p className="text-xs text-[#ffb16c] font-mono">Campaign telemetry unavailable: {violetError}</p>
+        ) : !violetResearch ? (
+          <p className="text-xs text-[#c28e95] font-mono">Loading 72-hour campaign status…</p>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs font-mono">
+            <div className="rounded-lg bg-[#080305] border border-[#ff3555]/20 p-3">
+              <div className="text-[#b8868e]">Worker Health</div>
+              <div className="text-sm font-bold text-[#ffe3e5] mt-1">
+                {(violetResearch.violet.worker_health || 'unknown').toUpperCase()}
+              </div>
+              <div className="text-[11px] text-[#c28e95] mt-0.5">{violetResearch.violet.source}</div>
+            </div>
+            <div className="rounded-lg bg-[#080305] border border-[#ff3555]/20 p-3">
+              <div className="text-[#b8868e]">Completed Cycles</div>
+              <div className="text-sm font-bold text-[#ff6375] mt-1">
+                {violetResearch.violet.cycles ?? '—'}
+              </div>
+              <div className="text-[11px] text-[#c28e95] mt-0.5">Mode: {violetResearch.mode}</div>
+            </div>
+            <div className="rounded-lg bg-[#080305] border border-[#ff3555]/20 p-3">
+              <div className="text-[#b8868e]">Campaign Window</div>
+              <div className="text-sm font-bold text-[#ffe3e5] mt-1">
+                {violetResearch.violet.campaign?.status
+                  ? String(violetResearch.violet.campaign.status).toUpperCase()
+                  : 'ACTIVE'}
+              </div>
+              <div className="text-[11px] text-[#c28e95] mt-0.5">
+                {typeof violetResearch.violet.campaign?.remaining_hours === 'number'
+                  ? `${violetResearch.violet.campaign.remaining_hours.toFixed(1)}h remaining`
+                  : 'Solana & Crypto ledgers isolated'}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Backend Integration & VPS Deployment Spec Toggle */}

@@ -1,10 +1,36 @@
 import { ApiFetchError, TelegramAuthError } from './quantApi';
 
+export interface SolanaCostAssumptions {
+  network_fee_lamports?: number;
+  priority_fee_lamports?: number;
+  jito_tip_lamports?: number;
+  slippage_bps_per_leg?: number;
+  extra_buffer_bps?: number;
+}
+
 export interface SolanaRouteObservation {
   dataset: string;
   observations: number | null;
   stale: boolean;
+  latest_age_seconds?: number | null;
+  mean_gross_lamports?: number | null;
   mean_conservative_net_lamports: number | null;
+  median_conservative_net_lamports?: number | null;
+  positive_conservative_quotes?: number | null;
+  cost_assumptions?: SolanaCostAssumptions | null;
+  warning?: string | null;
+}
+
+export interface SolanaFundingObservation {
+  dataset: string;
+  gross_funding_usd: number | null;
+  fees_usd: number | null;
+  net_pnl_usd: number | null;
+  hours: number | null;
+  observations: number | null;
+  coverage_pct: number | null;
+  assumption: string | null;
+  warning: string | null;
 }
 
 export interface SolanaSummaryPayload {
@@ -14,6 +40,7 @@ export interface SolanaSummaryPayload {
   verdict: 'NOT PROVEN PROFITABLE' | 'NOT PROVEN' | 'UNKNOWN' | string;
   observations: number | null;
   routes: SolanaRouteObservation[];
+  funding?: SolanaFundingObservation[];
   blockers: string[];
   alerts: string[];
 }
@@ -59,9 +86,35 @@ function buildAuthHeaders(initData?: string): HeadersInit {
   return headers;
 }
 
+function numOrNull(val: unknown): number | null {
+  return typeof val === 'number' && Number.isFinite(val) ? val : null;
+}
+
 function normalizeStringArray(raw: unknown): string[] {
   if (!Array.isArray(raw)) return [];
   return raw.filter((item): item is string => typeof item === 'string' && item.trim().length > 0);
+}
+
+function normalizeCostAssumptions(raw: unknown): SolanaCostAssumptions | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const obj = raw as Record<string, unknown>;
+  const out: SolanaCostAssumptions = {};
+  const keys: Array<keyof SolanaCostAssumptions> = [
+    'network_fee_lamports',
+    'priority_fee_lamports',
+    'jito_tip_lamports',
+    'slippage_bps_per_leg',
+    'extra_buffer_bps'
+  ];
+  let hasAny = false;
+  for (const k of keys) {
+    const val = numOrNull(obj[k]);
+    if (val !== null) {
+      out[k] = val;
+      hasAny = true;
+    }
+  }
+  return hasAny ? out : null;
 }
 
 function validateSolanaSummary(json: unknown): SolanaSummaryPayload {
@@ -84,12 +137,34 @@ function validateSolanaSummary(json: unknown): SolanaSummaryPayload {
     if (typeof r.dataset !== 'string') continue;
     routes.push({
       dataset: r.dataset,
-      observations: typeof r.observations === 'number' && Number.isFinite(r.observations) ? r.observations : null,
+      observations: numOrNull(r.observations),
       stale: r.stale === true,
-      mean_conservative_net_lamports:
-        typeof r.mean_conservative_net_lamports === 'number' && Number.isFinite(r.mean_conservative_net_lamports)
-          ? r.mean_conservative_net_lamports
-          : null
+      latest_age_seconds: numOrNull(r.latest_age_seconds),
+      mean_gross_lamports: numOrNull(r.mean_gross_lamports),
+      mean_conservative_net_lamports: numOrNull(r.mean_conservative_net_lamports),
+      median_conservative_net_lamports: numOrNull(r.median_conservative_net_lamports),
+      positive_conservative_quotes: numOrNull(r.positive_conservative_quotes),
+      cost_assumptions: normalizeCostAssumptions(r.cost_assumptions),
+      warning: typeof r.warning === 'string' ? r.warning : null
+    });
+  }
+
+  const rawFunding = Array.isArray(obj.funding) ? obj.funding : [];
+  const funding: SolanaFundingObservation[] = [];
+  for (const item of rawFunding) {
+    if (!item || typeof item !== 'object') continue;
+    const f = item as Record<string, unknown>;
+    if (typeof f.dataset !== 'string') continue;
+    funding.push({
+      dataset: f.dataset,
+      gross_funding_usd: numOrNull(f.gross_funding_usd),
+      fees_usd: numOrNull(f.fees_usd),
+      net_pnl_usd: numOrNull(f.net_pnl_usd),
+      hours: numOrNull(f.hours),
+      observations: numOrNull(f.observations),
+      coverage_pct: numOrNull(f.coverage_pct),
+      assumption: typeof f.assumption === 'string' ? f.assumption : null,
+      warning: typeof f.warning === 'string' ? f.warning : null
     });
   }
 
@@ -98,8 +173,9 @@ function validateSolanaSummary(json: unknown): SolanaSummaryPayload {
     mode: obj.mode,
     live_orders_enabled: false,
     verdict: typeof obj.verdict === 'string' ? obj.verdict : 'UNKNOWN',
-    observations: typeof obj.observations === 'number' && Number.isFinite(obj.observations) ? obj.observations : null,
+    observations: numOrNull(obj.observations),
     routes,
+    funding,
     blockers: normalizeStringArray(obj.blockers),
     alerts: normalizeStringArray(obj.alerts)
   };
@@ -131,7 +207,7 @@ function validateVioletResearch(json: unknown): VioletResearchPayload {
     violet: {
       campaign,
       worker_health: typeof violetObj.worker_health === 'string' ? violetObj.worker_health : null,
-      cycles: typeof violetObj.cycles === 'number' && Number.isFinite(violetObj.cycles) ? violetObj.cycles : null,
+      cycles: numOrNull(violetObj.cycles),
       source: typeof violetObj.source === 'string' ? violetObj.source : 'isolated_violet_paper_ledger'
     },
     solana: validateSolanaSummary(obj.solana),

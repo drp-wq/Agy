@@ -32,9 +32,16 @@ type RouteFreshnessFilter = 'ALL' | 'FRESH' | 'STALE';
 const STALE_AGE_THRESHOLD_SEC = 60;
 const POLL_INTERVAL_MS = 30000;
 
-function formatLamports(value: number | null): string {
-  if (value === null || !Number.isFinite(value)) return 'Unavailable';
+function formatLamports(value: number | null | undefined): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return 'Unavailable';
   return `${Math.round(value).toLocaleString('en-US')} lamports`;
+}
+
+function formatDatasetAge(seconds: number | null | undefined): string {
+  if (seconds === null || seconds === undefined || !Number.isFinite(seconds)) return '—';
+  if (seconds < 60) return `${seconds.toFixed(1)}s`;
+  if (seconds < 3600) return `${Math.round(seconds / 60)}m`;
+  return `${(seconds / 3600).toFixed(1)}h`;
 }
 
 function formatCampaignValue(val: unknown): string {
@@ -606,29 +613,50 @@ export const SolanaResearchContent: React.FC<SolanaResearchContentProps> = ({
                             onClick={() => toggleSort('observations')}
                             className="inline-flex items-center gap-1 hover:text-[#ffe3e5]"
                           >
-                            <span>Quote Observations</span>
+                            <span>Quotes / Pos</span>
                             <ArrowUpDown className="w-3 h-3 text-[#ff6375]" />
                           </button>
                         </th>
+                        <th className="py-3 px-3 text-right">Gross Mean</th>
                         <th className="py-3 px-3 text-right">
                           <button
                             type="button"
                             onClick={() => toggleSort('net_lamports')}
                             className="inline-flex items-center gap-1 hover:text-[#ffe3e5]"
                           >
-                            <span>Hypothetical Net (Lamports)</span>
+                            <span>Conservative Net (Mean / Med)</span>
                             <ArrowUpDown className="w-3 h-3 text-[#ff6375]" />
                           </button>
                         </th>
-                        <th className="py-3 px-4 text-right">Freshness</th>
+                        <th className="py-3 px-4 text-right">Age / Freshness</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-[#ff3555]/15">
                       {filteredRoutes.map((route: SolanaRouteObservation) => (
                         <tr key={route.dataset} className="hover:bg-[#ff3555]/5 transition-colors">
-                          <td className="py-3 px-4 text-[#ffe3e5] font-semibold">{route.dataset}</td>
+                          <td className="py-3 px-4">
+                            <div className="text-[#ffe3e5] font-semibold">{route.dataset}</div>
+                            {route.cost_assumptions && (
+                              <div className="text-[10px] text-[#b8868e] mt-0.5">
+                                Fee {route.cost_assumptions.network_fee_lamports ?? '—'} lamports · Slip{' '}
+                                {route.cost_assumptions.slippage_bps_per_leg ?? '—'} bps/leg
+                              </div>
+                            )}
+                          </td>
                           <td className="py-3 px-3 text-right text-[#f3c6cc]">
-                            {route.observations !== null ? route.observations.toLocaleString('en-US') : 'Unavailable'}
+                            <div>
+                              {route.observations !== null ? route.observations.toLocaleString('en-US') : 'Unavailable'}
+                            </div>
+                            {route.positive_conservative_quotes !== null && route.positive_conservative_quotes !== undefined && (
+                              <div className="text-[10px] text-[#b8868e]">
+                                {route.positive_conservative_quotes} positive
+                              </div>
+                            )}
+                          </td>
+                          <td className="py-3 px-3 text-right text-[#d4a5ac]">
+                            {route.mean_gross_lamports !== undefined && route.mean_gross_lamports !== null
+                              ? formatLamports(route.mean_gross_lamports)
+                              : '—'}
                           </td>
                           <td
                             className={`py-3 px-3 text-right font-semibold ${
@@ -639,7 +667,12 @@ export const SolanaResearchContent: React.FC<SolanaResearchContentProps> = ({
                                   : 'text-[#ff6375]'
                             }`}
                           >
-                            {formatLamports(route.mean_conservative_net_lamports)}
+                            <div>{formatLamports(route.mean_conservative_net_lamports)}</div>
+                            {route.median_conservative_net_lamports !== undefined && route.median_conservative_net_lamports !== null && (
+                              <div className="text-[10px] font-normal text-[#b8868e]">
+                                Med: {formatLamports(route.median_conservative_net_lamports)}
+                              </div>
+                            )}
                           </td>
                           <td className="py-3 px-4 text-right">
                             <span
@@ -651,6 +684,11 @@ export const SolanaResearchContent: React.FC<SolanaResearchContentProps> = ({
                             >
                               {route.stale ? 'STALE' : 'FRESH'}
                             </span>
+                            {route.latest_age_seconds !== undefined && route.latest_age_seconds !== null && (
+                              <div className="text-[10px] text-[#b8868e] mt-0.5">
+                                {formatDatasetAge(route.latest_age_seconds)} old
+                              </div>
+                            )}
                           </td>
                         </tr>
                       ))}
@@ -672,10 +710,18 @@ export const SolanaResearchContent: React.FC<SolanaResearchContentProps> = ({
                           }`}
                         >
                           {route.stale ? 'STALE' : 'FRESH'}
+                          {route.latest_age_seconds !== undefined && route.latest_age_seconds !== null
+                            ? ` · ${formatDatasetAge(route.latest_age_seconds)}`
+                            : ''}
                         </span>
                       </div>
                       <div className="flex items-center justify-between text-[#d4a5ac]">
-                        <span>Quotes: {route.observations !== null ? route.observations.toLocaleString('en-US') : 'Unavailable'}</span>
+                        <span>
+                          Quotes: {route.observations !== null ? route.observations.toLocaleString('en-US') : 'Unavailable'}
+                          {route.positive_conservative_quotes !== null && route.positive_conservative_quotes !== undefined
+                            ? ` (${route.positive_conservative_quotes} pos)`
+                            : ''}
+                        </span>
                         <span
                           className={
                             route.mean_conservative_net_lamports === null
@@ -688,12 +734,71 @@ export const SolanaResearchContent: React.FC<SolanaResearchContentProps> = ({
                           {formatLamports(route.mean_conservative_net_lamports)}
                         </span>
                       </div>
+                      {route.mean_gross_lamports !== undefined && route.mean_gross_lamports !== null && (
+                        <div className="text-[11px] text-[#b8868e]">
+                          Gross Mean: {formatLamports(route.mean_gross_lamports)}
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
               </>
             )}
           </section>
+
+          {/* Tile 08: Funding Research (when reported) */}
+          {effectiveSolana.funding && effectiveSolana.funding.length > 0 && (
+            <section aria-label="Solana funding research" className="nq-panel rounded-xl p-4 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-[#ff3555]/20">
+                <div>
+                  <h3 className="font-display font-semibold text-sm text-[#ffe3e5]">
+                    08 / Funding Research Telemetry ({effectiveSolana.funding.length})
+                  </h3>
+                  <p className="text-xs text-[#c28e95] mt-0.5">
+                    Static funding-rate stress observations (excluded from realized P&amp;L)
+                  </p>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {effectiveSolana.funding.map((item) => (
+                  <div
+                    key={item.dataset}
+                    className="rounded-lg bg-[#080305] border border-[#ff3555]/20 p-3 space-y-2 text-xs font-mono"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-semibold text-[#ffe3e5]">{item.dataset}</span>
+                      <span className="text-[11px] text-[#b8868e]">
+                        {item.hours ?? '—'}h · {item.coverage_pct !== null ? `${item.coverage_pct.toFixed(0)}% cov` : '—'}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 text-[11px]">
+                      <div>
+                        <div className="text-[#b8868e]">Gross</div>
+                        <div className="text-[#ffe3e5]">
+                          {item.gross_funding_usd !== null ? `$${item.gross_funding_usd.toFixed(2)}` : '—'}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-[#b8868e]">Fees</div>
+                        <div className="text-[#ffb16c]">
+                          {item.fees_usd !== null ? `$${item.fees_usd.toFixed(2)}` : '—'}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-[#b8868e]">Net Stress</div>
+                        <div className={item.net_pnl_usd !== null && item.net_pnl_usd >= 0 ? 'text-[#10b981]' : 'text-[#ff6375]'}>
+                          {item.net_pnl_usd !== null ? `$${item.net_pnl_usd.toFixed(2)}` : '—'}
+                        </div>
+                      </div>
+                    </div>
+                    {item.assumption && (
+                      <div className="text-[10px] text-[#b8868e]">Assumption: {item.assumption}</div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
         </>
       )}
     </div>
