@@ -22,3 +22,5 @@ Active campaign pointer: /root/paper-maintenance-preview-data/active-violet-camp
 Checkpoint hashes: evidence/discovery.json. Evidence checksums: SHA256SUMS. Debug APK details are added only after final rebuild. No release signing material is included.
 
 Final Android result: VERIFIED debug build; 14 automated tests, 0 failures, 0 errors. APK: artifacts/violet-scarlet-pro-debug.apk; SHA-256 64cd5f30e2629eecda26fc9cd557f83beb438a30adb699000c8974bfd7aa210f. Physical-device and server integration gates remain pending.
+
+Validated backend candidate source commit: 69b421e12fad2b2c69c00668f9b79bb47d2da7b8. Android native source commit: 1c543250fc758aa76bb22b07a7509c7a40b507aa. Neither was deployed/pushed. Android build also used the uploaded .env.example and app/google-services.json; their checksums are recorded separately in evidence/android-input-config-hashes.json (values not disclosed). Backend source tests: 217 passed; Android 14 passed.

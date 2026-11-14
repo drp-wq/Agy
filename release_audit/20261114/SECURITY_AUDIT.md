@@ -15,3 +15,5 @@ BLOCKED: Android mobile code-exchange/login POST routes returned 405. Backend be
 Exchange permission findings: OKX and Bybit keys have trading permissions, unchanged by this audit. Application locks remain mandatory. No independent OS/network isolation proof prevents every possible process from using externally trade-capable keys. Service processes run as root; isolation hardening remains incomplete.
 
 NOT TESTED: authenticated Google provider interaction, Pixel hardware Keystore, physical-device TLS/network behavior, full API/queue/worker penetration testing. Secret values, signing material and credential changes are excluded from commits and reports.
+
+APK secret scan: no exact matches against 10 locally registered secret values across decompressed APK entries. This limited check is evidence against direct embedding of those values, not exhaustive decompilation or supply-chain certification. Firebase public client configuration remains distinct from private secrets.
