@@ -4,7 +4,9 @@ Funding is never inferred from a ticker or live exchange account. A caller must
 supply a documented settlement event and amount. No exchange I/O occurs here.
 """
 from __future__ import annotations
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_EVEN
+from contextlib import nullcontext
+import math
 from datetime import datetime, timezone
 from app.core.security import assert_paper_only
 from app.treasury.models import AttributionCategory
@@ -12,16 +14,16 @@ from app.treasury.models import AttributionCategory
 
 def settle_paper_funding(db, treasury, *, settlement_id: str, bot_id: str,
                          exchange: str, symbol: str, signed_usd: str,
-                         evidence: str) -> dict:
+                         evidence: str, conn=None) -> dict:
     assert_paper_only('paper')
     if not settlement_id.strip() or not evidence.strip():
         raise ValueError('Settlement ID and evidence are required')
     amount = Decimal(signed_usd)
-    if not amount.is_finite():
+    if not amount.is_finite() or not math.isfinite(float(amount)):
         raise ValueError('Funding must be a finite USD amount')
     if treasury.db is not db:
         raise ValueError('Funding and attribution must use the same database')
-    with db.transaction() as conn:
+    with (db.transaction() if conn is None else nullcontext(conn)) as conn:
         conn.execute('''CREATE TABLE IF NOT EXISTS paper_funding_settlements (
             settlement_id TEXT PRIMARY KEY, bot_id TEXT NOT NULL,
             exchange TEXT NOT NULL, symbol TEXT NOT NULL,
@@ -59,7 +61,8 @@ def settle_paper_funding(db, treasury, *, settlement_id: str, bot_id: str,
 def settle_position_funding(db, treasury, *, bot_id: str, exchange: str,
                             symbol: str, settlement_at: datetime,
                             interval_seconds: int, rate: str, mark_price: str,
-                            exposure_history: list[dict], evidence: str) -> dict:
+                            exposure_history: list[dict], evidence: str,
+                            interval_start_at: datetime | None = None, conn=None) -> dict:
     """Settle one evidenced linear USDT perpetual interval, never current exposure.
 
     History rows are immutable post-change signed base quantities and UTC timestamps.
@@ -76,8 +79,13 @@ def settle_position_funding(db, treasury, *, bot_id: str, exchange: str,
         raise ValueError('Timezone-aware settlement timestamp required')
     if not isinstance(interval_seconds, int) or isinstance(interval_seconds, bool) or interval_seconds <= 0:
         raise ValueError('Positive integer funding interval required')
-    if settlement_at.microsecond or int(settlement_at.timestamp()) % interval_seconds:
-        raise ValueError('Settlement must be an exact UTC interval boundary')
+    if settlement_at.microsecond:
+        raise ValueError('Settlement must use an exact second boundary')
+    if interval_start_at is None:
+        if int(settlement_at.timestamp()) % interval_seconds:
+            raise ValueError('Settlement must be an exact UTC interval boundary')
+    elif interval_start_at.tzinfo is None or interval_start_at.utcoffset() is None or (settlement_at-interval_start_at).total_seconds()!=interval_seconds:
+        raise ValueError('Evidenced interval start does not match settlement interval')
     if not evidence.strip() or not exposure_history:
         raise ValueError('Funding source and exposure history required')
     funding_rate, mark = Decimal(rate), Decimal(mark_price)
@@ -93,21 +101,28 @@ def settle_position_funding(db, treasury, *, bot_id: str, exchange: str,
         if at in seen:
             raise ValueError('Ambiguous exposure timestamps')
         seen.add(at)
-        if at < settlement_at:
+        if at < settlement_at or (at==settlement_at and row.get('boundary_before') is True):
             eligible.append((at, qty))
     if not eligible:
         raise ValueError('No evidenced exposure before settlement')
     effective_at, quantity = max(eligible, key=lambda row: row[0])
-    amount = -quantity * mark * funding_rate
+    raw_amount = -quantity * mark * funding_rate
+    # Explicit paper-USDT settlement precision; preserve the exact calculation
+    # and rounding difference in evidence rather than hiding precision drift.
+    amount = raw_amount.quantize(Decimal('0.00000001'),rounding=ROUND_HALF_EVEN)
     instant = settlement_at.astimezone(timezone.utc).isoformat()
     source = json.dumps(dict(source=evidence, settlement_at=instant,
-                             interval_seconds=interval_seconds, rate=str(funding_rate),
-                             mark_price=str(mark), signed_qty=str(quantity),
-                             exposure_at=effective_at.astimezone(timezone.utc).isoformat()),
+                             interval_seconds=interval_seconds, rate=str(funding_rate.normalize()),
+                             mark_price=str(mark.normalize()), signed_qty=str(quantity.normalize()),
+                             exposure_at=effective_at.astimezone(timezone.utc).isoformat(),
+                             interval_start_at=interval_start_at.astimezone(timezone.utc).isoformat() if interval_start_at else None,
+                             raw_amount_usd=str(raw_amount.normalize()), rounding_delta_usd=str((amount-raw_amount).normalize()),
+                             settlement_precision=8),
                         sort_keys=True)
     result = settle_paper_funding(
         db, treasury, settlement_id=f'linear:{exchange}:{bot_id}:{symbol}:{instant}',
         bot_id=bot_id, exchange=exchange, symbol=symbol,
-        signed_usd=str(amount), evidence=source)
+        signed_usd=str(amount), evidence=source, conn=conn)
     return result | {'signed_qty': str(quantity), 'rate': str(funding_rate),
-                     'notional_usd': str(abs(quantity) * mark), 'settlement_at': instant}
+                     'notional_usd': str(abs(quantity) * mark), 'settlement_at': instant,
+                     'raw_amount_usd': str(raw_amount), 'rounding_delta_usd': str(amount-raw_amount)}

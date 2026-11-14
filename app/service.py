@@ -22,6 +22,7 @@ from app.strategies.orchestrator import AIStrategyOrchestrator
 from app.treasury import AgentStrategyAllocator, UnifiedTreasuryLedger, AttributionCategory
 from app.treasury.reconciliation_audit import audit_paper_pnl_coverage
 from app.treasury.paper_funding import settle_paper_funding
+from app.treasury.funding_coordinator import settle_captured_funding
 from app.wallets import SolanaWatchOnlyMonitor, load_watch_only_wallets
 from app.telegram.adapter import TelegramAlertAdapter
 from app.telegram.commands import TelegramCommandHandler
@@ -216,6 +217,16 @@ class TradingEngineService:
         if self.treasury is None:
             raise RuntimeError("Paper treasury is disabled")
         return settle_paper_funding(self.db, self.treasury, **settlement)
+
+    def settle_captured_paper_funding(self, **settlement: Any) -> dict[str, Any]:
+        """Internal paper-only ingestion; never accepts caller-supplied exposure.
+
+        Venue delivery/schedule completeness must be independently established.
+        This is deliberately not exposed as an HTTP or exchange-order route.
+        """
+        if self.treasury is None:
+            raise RuntimeError("Paper treasury is disabled")
+        return settle_captured_funding(self.db, self.treasury, **settlement)
 
     async def run_cycle(self, fetch_all_tfs: bool = False) -> dict[str, Any]:
         assert_paper_only("paper")

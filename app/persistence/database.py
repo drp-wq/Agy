@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import threading
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
@@ -736,10 +736,11 @@ class PaperDatabase:
         realized_pnl_usd: str = "0",
         details: dict[str, Any] | None = None,
         idempotency_key: str | None = None,
+        conn: sqlite3.Connection | None = None,
     ) -> bool:
         """Append an immutable paper ledger event; returns True if inserted, False on duplicate idempotency_key."""
         payload = json.dumps(details or {}, sort_keys=True)
-        with self.transaction() as conn:
+        with (self.transaction() if conn is None else nullcontext(conn)) as conn:
             cur = conn.execute(
                 """
                 INSERT OR IGNORE INTO paper_ledger_events (

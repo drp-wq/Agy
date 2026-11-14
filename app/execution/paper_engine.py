@@ -28,6 +28,7 @@ from app.core.security import assert_paper_only
 from app.persistence.database import PaperDatabase
 from app.risk.guardian import GlobalRiskGuardian
 from app.execution import paper_protection
+from app.treasury import paper_exposure
 
 logger = logging.getLogger("multi_exchange.execution")
 
@@ -399,7 +400,20 @@ class PaperExecutionEngine:
                     )
             return order
 
-    def _apply_fill_to_position_and_account(
+    def _apply_fill_to_position_and_account(self, order, mark_price, conn=None):
+        """Financial state and futures exposure evidence share one transaction."""
+        assert_paper_only('paper')
+        if conn is None:
+            with self.db.transaction() as transaction:
+                return self._apply_fill_to_position_and_account(order,mark_price,transaction)
+        if order.market_type==MarketType.PERP:
+            if not paper_exposure.before_execution(self.db,conn,order):
+                return
+        self._apply_fill_financial_state(order,mark_price,conn)
+        if order.market_type==MarketType.PERP:
+            paper_exposure.after_execution(self.db,conn,order)
+
+    def _apply_fill_financial_state(
         self,
         order: PaperOrder,
         mark_price: float,
