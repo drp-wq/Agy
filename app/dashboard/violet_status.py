@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 from fastapi import Depends, HTTPException
+from fastapi.responses import JSONResponse
+from app.dashboard.persistence_health import persistence_health
 from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 
@@ -44,6 +46,11 @@ def install_violet_status(
         )
 
     auth_dep = Depends(make_auth_dependency(auth_config))
+
+    @app.get('/api/violet/persistence/health', dependencies=[auth_dep])
+    async def persistence_health_status():
+        result = await run_in_threadpool(persistence_health, app)
+        return JSONResponse(result, status_code=200 if result['status'] == 'ok' else 503)
 
     @app.get('/api/violet/all-cap', dependencies=[auth_dep])
     async def all_cap_status():

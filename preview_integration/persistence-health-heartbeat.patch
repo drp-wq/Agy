@@ -1,0 +1,4 @@
+--- a/preview_integration/preview_app.py
++++ b/preview_integration/preview_app.py
+@@ -34,0 +35,1 @@
++        app.state.persistence_scheduler_heartbeat = datetime.now(timezone.utc).isoformat()

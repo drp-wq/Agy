@@ -40,3 +40,20 @@ risk halt persistence, journal reconciliation/drift, report-write rollback,
 observed metrics and idempotency beyond 200 transfers. Frontend lint, tests (25),
 and build passed. The sandbox hangs inside Starlette TestClient even for an empty
 FastAPI app; the backend gate passes outside that sandbox.
+
+Persistence health follow-up:
+- Authenticated GET `/api/violet/persistence/health` uses a separate mode=ro SQLite
+  connection and read transaction for integrity, journal reconciliation, equity
+  conservation, and the last durable brain cycle timestamp. It never initializes
+  missing storage or updates the running router. Unavailable diagnostics return 503.
+- Scheduler heartbeat is an explicit UTC ISO timestamp at
+  `app.state.persistence_scheduler_heartbeat`; missing, malformed, future or older
+  than 120 seconds fails closed. A stored cycle is never a substitute heartbeat.
+- `preview_integration/persistence-health-heartbeat.patch` is an UNAPPLIED minimal
+  integration patch for the untracked preview brain loop. Apply with
+  `git apply --unidiff-zero` once AGY commits its preview baseline/dependencies.
+  Until integrated, scheduler health correctly remains unavailable.
+- The actual preview unit was inspected: active PID 231010, working directory this
+  checkout, uvicorn preview_app:app on 127.0.0.3:8790. No restart was performed:
+  untracked preview application/dependencies and campaign coupling remain blockers.
+  Restart recovery is validated only against isolated temporary router databases.
