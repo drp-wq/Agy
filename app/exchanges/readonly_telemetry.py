@@ -12,7 +12,7 @@ import aiohttp
 import ccxt.async_support as ccxt_async
 
 from app.core.logging_setup import register_sensitive_value
-from app.core.security import LIVE_EXECUTION_PERMANENTLY_DISABLED
+from app.core.security import LIVE_EXECUTION_PERMANENTLY_DISABLED, enforce_read_only_exchange
 
 DEFAULT_EXCHANGES_ENV = Path("/root/trading-secrets/exchanges.env")
 ALLOWED_EXCHANGES = ("binance", "bybit", "okx")
@@ -183,7 +183,7 @@ class ReadOnlyExchangeTelemetry:
             opts["options"] = {"defaultType": "unified"}
         elif exchange_id == "okx":
             opts["options"] = {"defaultType": "swap"}
-        return cls(opts), session
+        return enforce_read_only_exchange(cls(opts)), session
 
     async def _fetch_one(self, exchange_id: str) -> dict[str, Any]:
         now_ts = int(time.time())
@@ -191,7 +191,7 @@ class ReadOnlyExchangeTelemetry:
         if not cred:
             return {
                 "exchange": exchange_id,
-                "public_feed_ok": True,
+                "public_feed_ok": False,
                 "private_auth_ok": False,
                 "auth_state": "missing_credentials",
                 "private_auth_error": "missing_credentials",
@@ -224,27 +224,46 @@ class ReadOnlyExchangeTelemetry:
 
                     balances: dict[str, float] = {}
                     positions: list[dict[str, Any]] = []
-                    account_status = "read_only_verified"
+                    account_status = "authenticated_permissions_unverified"
+                    endpoint_status = {"balances": "VERIFIED", "positions": "NOT_TESTED", "permissions": "NOT_TESTED"}
                     api_permissions: dict[str, Any] | None = None
 
                     if exchange_id == "binance":
                         spot_bal = await client.fetch_balance({"type": "spot"})
                         balances = _extract_nonzero_balances(spot_bal)
                         try:
-                            pos_raw = await client.fetch_positions()
-                            positions = _extract_open_positions(pos_raw)
-                        except Exception:
-                            positions = []
+                            # Native GET avoids unified discovery paths that require account writes.
+                            raw_positions = await client.fapiprivatev3_get_positionrisk()
+                            positions = [{
+                                "symbol": p.get("symbol", ""),
+                                "side": "long" if float(p.get("positionAmt", 0)) > 0 else "short",
+                                "contracts": abs(float(p.get("positionAmt", 0))),
+                                "entry_price": float(p.get("entryPrice", 0)),
+                                "unrealized_pnl": float(p.get("unRealizedProfit", 0)),
+                            } for p in raw_positions if float(p.get("positionAmt", 0)) != 0]
+                            endpoint_status["positions"] = "VERIFIED"
+                            await client.fapiprivatev3_get_balance()
+                            endpoint_status["futures_balances"] = "VERIFIED"
+                        except Exception as exc:
+                            endpoint_status["futures_balances"] = "BLOCKED:" + type(exc).__name__
+                            if endpoint_status["positions"] != "VERIFIED":
+                                endpoint_status["positions"] = "BLOCKED:" + type(exc).__name__
                         try:
                             restrictions = await client.sapi_get_account_apirestrictions()
                             api_permissions = {
                                 "read_only": not bool(restrictions.get("enableSpotAndMarginTrading"))
-                                and not bool(restrictions.get("enableWithdrawals")),
+                                and not bool(restrictions.get("enableWithdrawals"))
+                                and not bool(restrictions.get("enableFutures"))
+                                and not bool(restrictions.get("enableMargin")),
                                 "enableReading": bool(restrictions.get("enableReading", True)),
                                 "enableWithdrawals": bool(restrictions.get("enableWithdrawals", False)),
+                                "enableSpotAndMarginTrading": bool(restrictions.get("enableSpotAndMarginTrading", False)),
+                                "enableFutures": bool(restrictions.get("enableFutures", False)),
                             }
-                        except Exception:
-                            api_permissions = {"enableReading": True}
+                            endpoint_status["permissions"] = "VERIFIED"
+                        except Exception as exc:
+                            endpoint_status["permissions"] = "BLOCKED:" + type(exc).__name__
+                            api_permissions = None
 
                     elif exchange_id == "bybit":
                         uta_bal = await client.fetch_balance({"type": "unified"})
@@ -252,9 +271,16 @@ class ReadOnlyExchangeTelemetry:
                         try:
                             pos_raw = await client.fetch_positions()
                             positions = _extract_open_positions(pos_raw)
-                        except Exception:
+                            endpoint_status["positions"] = "VERIFIED"
+                        except Exception as exc:
                             positions = []
+                            endpoint_status["positions"] = "BLOCKED:" + type(exc).__name__
                         try:
+                            key_info = await client.private_get_v5_user_query_api()
+                            key_result = key_info.get("result", {})
+                            api_permissions = {"read_only": key_result.get("readOnly") == 1,
+                                               "permissions": key_result.get("permissions")}
+                            endpoint_status["permissions"] = "VERIFIED"
                             info = await client.private_get_v5_account_info()
                             res = info.get("result") if isinstance(info, dict) else {}
                             if isinstance(res, dict) and res.get("unifiedMarginStatus"):
@@ -268,13 +294,20 @@ class ReadOnlyExchangeTelemetry:
                         try:
                             pos_raw = await client.fetch_positions()
                             positions = _extract_open_positions(pos_raw)
-                        except Exception:
+                            endpoint_status["positions"] = "VERIFIED"
+                        except Exception as exc:
                             positions = []
+                            endpoint_status["positions"] = "BLOCKED:" + type(exc).__name__
                         try:
                             cfg = await client.private_get_account_config()
                             data = cfg.get("data") if isinstance(cfg, dict) else []
                             if isinstance(data, list) and data and isinstance(data[0], dict):
                                 account_status = f"acctLv_{data[0].get('acctLv', 'ok')}"
+                                permission = data[0].get('perm')
+                                if permission is not None:
+                                    api_permissions = {"read_only": set(permission.split(',')) == {'read_only'},
+                                                       "permissions": permission}
+                                    endpoint_status["permissions"] = "VERIFIED"
                         except Exception:
                             pass
 
@@ -284,6 +317,7 @@ class ReadOnlyExchangeTelemetry:
                         "positions": positions,
                         "account_status": account_status,
                         "api_permissions": api_permissions,
+                        "endpoint_status": endpoint_status,
                     }
 
                 res = await asyncio.wait_for(_query(), timeout=self.timeout_sec)
@@ -300,6 +334,7 @@ class ReadOnlyExchangeTelemetry:
                     "freshness": "fresh",
                     "account_status": res["account_status"],
                     "api_permissions": res["api_permissions"],
+                    "endpoint_status": res["endpoint_status"],
                     "live_readonly_snapshot": {
                         "status": "ok",
                         "timestamp": sync_ts,

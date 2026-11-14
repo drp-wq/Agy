@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from contextlib import nullcontext
 from collections import defaultdict
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -1095,6 +1096,8 @@ class UnifiedTreasuryLedger:
         category: AttributionCategory,
         amount: Decimal | float | str,
         fx_snapshot: FxRateSnapshot | None = None,
+        *,
+        conn=None,
     ) -> AttributionRecord:
         assert_paper_only("paper")
         dec_amt = to_decimal(amount)
@@ -1114,7 +1117,7 @@ class UnifiedTreasuryLedger:
             usd_value=usd_val,
             is_trading_profit=is_trading_profit,
         )
-        with self.db.transaction() as conn:
+        with (self.db.transaction() if conn is None else nullcontext(conn)) as conn:
             existing = conn.execute(
                 "SELECT * FROM treasury_attribution_events WHERE idempotency_key = ?",
                 (idempotency_key,),

@@ -106,7 +106,7 @@ def test_migration_4_backfills_reserved_margin_and_preserves_data(tmp_path: Path
         r["version"]
         for r in db._conn.execute("SELECT version FROM schema_migrations ORDER BY version").fetchall()
     ]
-    assert versions == [1, 2, 3, 4]
+    assert versions == [version for version, _ in MIGRATIONS]
     db.close()
 
 

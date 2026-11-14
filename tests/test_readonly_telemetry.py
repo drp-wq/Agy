@@ -153,3 +153,23 @@ def test_miniapp_state_overlays_readonly_telemetry_without_mixing_paper(tmp_path
     r2 = client.get("/api/miniapp/state?refresh=1", auth=("trader", "secret-pass-123"))
     assert r2.status_code == 200
     assert calls["force"] == 1
+
+
+def test_position_failure_is_explicit_and_never_certifies_empty_account(tmp_path, monkeypatch):
+    env_file = tmp_path / 'empty.env'
+    env_file.write_text('')
+    tel = ReadOnlyExchangeTelemetry(env_path=env_file)
+    tel._creds['bybit'] = {'apiKey': 'fixture-key', 'secret': 'fixture-secret'}
+    class Client:
+        async def fetch_ticker(self, *args): return {}
+        async def fetch_balance(self, *args): return {'total': {'USDT': 1}}
+        async def fetch_positions(self, *args): raise TimeoutError('fixture network failure')
+        async def private_get_v5_user_query_api(self): raise PermissionError('fixture denied')
+        async def close(self): pass
+    monkeypatch.setattr(tel, '_build_client', lambda exchange: (Client(), None))
+    result = asyncio.run(tel._fetch_one('bybit'))
+    assert result['private_auth_ok']
+    assert result['endpoint_status']['positions'] == 'BLOCKED:TimeoutError'
+    assert result['endpoint_status']['permissions'] == 'NOT_TESTED'
+    assert result['api_permissions'] is None
+    assert result['account_status'] != 'read_only_verified'

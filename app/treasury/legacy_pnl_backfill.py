@@ -315,7 +315,21 @@ def _verify_db_integrity_and_uniqueness(conn: sqlite3.Connection) -> dict[str, A
     dup_fill_orders = [
         r[0]
         for r in conn.execute(
-            "SELECT order_id FROM paper_fills GROUP BY order_id HAVING COUNT(*) > 1"
+            """SELECT f.order_id FROM paper_fills f
+            LEFT JOIN paper_orders o ON o.order_id=f.order_id
+            GROUP BY f.order_id
+            HAVING o.order_id IS NULL
+                OR ABS(SUM(f.qty)-o.filled_qty)>0.000001
+                OR ABS(SUM(f.fee_usd)-o.fee_usd)>0.000001
+                OR ABS(SUM(f.qty*f.price)/NULLIF(SUM(f.qty),0)-o.avg_fill_price)>0.000001
+                OR MIN(f.bot_id)!=o.bot_id OR MAX(f.bot_id)!=o.bot_id
+                OR MIN(f.exchange)!=o.exchange OR MAX(f.exchange)!=o.exchange
+                OR MIN(f.symbol)!=o.symbol OR MAX(f.symbol)!=o.symbol
+                OR MIN(f.market_type)!=o.market_type OR MAX(f.market_type)!=o.market_type
+                OR MIN(f.side)!=o.side OR MAX(f.side)!=o.side
+                OR MIN(f.is_paper)!=o.is_paper OR MAX(f.is_paper)!=o.is_paper
+                OR MIN(f.qty)<=0 OR MIN(f.price)<=0
+            """
         ).fetchall()
     ]
     dup_closure_orders = [
@@ -335,6 +349,7 @@ def _verify_db_integrity_and_uniqueness(conn: sqlite3.Connection) -> dict[str, A
         "foreign_key_violations": fk_violations,
         "duplicate_fill_ids": dup_fill_ids,
         "duplicate_fill_orders": dup_fill_orders,
+        "fill_validation": "aggregate quantity, VWAP, fees and identity must match order (1e-6 tolerance)",
         "duplicate_closure_orders": dup_closure_orders,
         "duplicate_attribution_keys": dup_attr_keys,
         "ok": (

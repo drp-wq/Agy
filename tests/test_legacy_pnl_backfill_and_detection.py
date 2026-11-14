@@ -686,3 +686,23 @@ def test_backfill_cli_dry_run_apply_and_prod_guard(tmp_path, monkeypatch, capsys
     assert apply_out["inserted_closures"] == 1
     assert apply_out["after_audit"]["recorded_evidence_coverage_ok"] is True
     assert abs(Decimal(apply_out["after_audit"]["unexplained_usd"])) < Decimal("1e-9")
+
+
+def test_integrity_accepts_partial_fills_but_rejects_duplicate_economics(tmp_path):
+    from app.treasury.legacy_pnl_backfill import _verify_db_integrity_and_uniqueness
+    db = PaperDatabase(tmp_path / 'partial.sqlite3')
+    order = PaperOrder(order_id='partial', client_order_id='partial-client', bot_id='bot',
+                       signal_id='fixture', exchange=ExchangeId.BINANCE, symbol='BTC/USDT',
+                       market_type=MarketType.SPOT, side=Side.BUY, requested_qty=2,
+                       filled_qty=2, avg_fill_price=100, fee_usd=0.2, status=OrderStatus.FILLED)
+    db.save_order(order)
+    for i in range(2):
+        db.save_fill(PaperFill(fill_id=f'slice-{i}', order_id='partial', bot_id='bot',
+                               exchange=ExchangeId.BINANCE, symbol='BTC/USDT',
+                               market_type=MarketType.SPOT, side=Side.BUY, qty=1,
+                               price=99 if i == 0 else 101, fee_usd=0.1, slippage_bps=0))
+    assert _verify_db_integrity_and_uniqueness(db._conn)['ok']
+    with db.transaction() as conn:
+        conn.execute("UPDATE paper_fills SET qty=2 WHERE fill_id='slice-1'")
+    assert not _verify_db_integrity_and_uniqueness(db._conn)['ok']
+    db.close()
