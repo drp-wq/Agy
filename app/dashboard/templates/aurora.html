@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-    <title>NEON QUANT V3 — Institutional Multi-Exchange Trading Terminal</title>
+    <title>VIOLET LAB — Independent Paper Trading Simulator</title>
     <meta name="description" content="Institutional multi-exchange paper-trading terminal & Telegram Mini App for Binance, Bybit, and OKX." />
     <meta property="og:title" content="NEON QUANT V3 — Multi-Exchange Trading Terminal" />
     <meta property="og:description" content="Institutional multi-exchange paper-trading terminal & Telegram Mini App for Binance, Bybit, and OKX." />
@@ -13,10 +13,19 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Outfit:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
-    <script type="module" crossorigin src="/aurora/assets/index-DRRCRkI5.js"></script>
-    <link rel="stylesheet" crossorigin href="/aurora/assets/index-Bc8TkC-k.css">
-  </head>
+    <script type="module" crossorigin src="/aurora/assets/index-Cj1kBceb.js"></script>
+    <link rel="stylesheet" crossorigin href="/aurora/assets/index-Dyj2e2Lz.css">
+  <style>
+:root{--nq-bg-void:#110a20;--nq-bg-navy:#1c1134;--nq-surface:#261740;--nq-surface-elevated:#34214e;--nq-border-accent:rgba(244,114,182,.5);--nq-cyan:#f472b6;--nq-violet:#c084fc;--nq-emerald:#34d399}html,body{background:#110a20!important}body:before{content:"VIOLET LAB  /  INDEPENDENT PAPER SIMULATOR";display:block;position:sticky;top:0;z-index:9999;padding:9px 16px;text-align:center;letter-spacing:.12em;font:600 11px system-ui;color:#fbcfe8;background:#4c1d5e;border-bottom:1px solid #a855f7} .nq-panel{background:rgba(38,23,64,.84)!important;border-color:rgba(192,132,252,.23)!important}
+</style>
+</head>
   <body class="bg-[#05080F] text-[#E2E8F0] selection:bg-[#00E5FF]/25 selection:text-[#00E5FF] antialiased overflow-x-hidden">
     <div id="root" data-sections="Overview, Markets, Opportunities, Positions / Paper, Risk, Alerts, Exchange Status"></div>
+    <aside id="violet-solana-research" aria-label="Solana paper research" style="position:fixed;right:12px;bottom:12px;z-index:9999;width:min(360px,calc(100vw - 24px));background:#1d1131;border:1px solid #9967ce;border-radius:16px;color:#f3e8ff;padding:12px;font:13px system-ui;box-shadow:0 12px 35px #0009">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><strong>VIOLET + SOLANA · PAPER</strong><button id="vs-toggle" type="button" aria-expanded="false" style="background:#54346c;color:white;border:0;border-radius:6px;padding:6px">Expand</button></div>
+      <p id="vs-status" role="status" style="margin:8px 0">Connecting to independent research…</p>
+      <div id="vs-details" hidden><p id="vs-campaign"></p><p id="vs-verdict"></p><p id="vs-observations"></p><div id="vs-routes" style="max-height:160px;overflow:auto"></div><p id="vs-alerts"></p><a href="https://solana.187-52-118-25.sslip.io/" target="_blank" rel="noopener noreferrer" style="color:#dfbaff">Open independent Solana research</a><p style="opacity:.75">No shared ledger, orders, wallet or credentials.</p><button id="vs-refresh" type="button">Refresh research</button></div>
+    </aside>
+    <script src="/aurora/assets/violet-solana.js" defer></script>
   </body>
 </html>
